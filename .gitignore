@@ -1,0 +1,8 @@
+build*/
+.idea/
+.vscode/
+user.cmake
+.DS_Store
+xruns/results
+zruns/
+*.msh

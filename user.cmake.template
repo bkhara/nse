@@ -1,0 +1,7 @@
+# --- C++ standard ---
+
+set(CMAKE_BUILD_TYPE Release)
+
+set(MFEM_DIR "/Users/biswajitkhara/packages/mfem/mfem-4.8/build")
+# set(MFEM_RELEASE_DIR "/Users/biswajitkhara/packages/mfem/mfem-4.8")
+# set(MFEM_DEBUG_DIR "/Users/biswajitkhara/packages/mfem/mfem-4.8")

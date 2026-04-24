@@ -1,0 +1,11 @@
+-el_ksp_type preonly
+-el_pc_type lu
+# -ksp_monitor
+#-el_ksp_view
+-el_ksp_converged_reason
+-el_snes_monitor
+-el_snes_converged_reason
+-el_snes_rtol 1e-6
+-el_snes_atol 1e-6
+# -options_view
+#-el_ksp_monitor_singular_value
