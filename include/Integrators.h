@@ -398,7 +398,6 @@ namespace fracture {
               f_coeff(f_coeff),
               vdim(vdim),
               ordering(ordering), rho(idata.stokes_mms2d_inputs.rho), mu(idata.stokes_mms2d_inputs.mu) {
-            MFEM_VERIFY(f_coeff != nullptr, "f_coeff is null in constructor");
         }
     };
 

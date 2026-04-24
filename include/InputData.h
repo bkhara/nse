@@ -23,6 +23,7 @@ namespace fracture {
         MMS_2D = 101,
         NOTCHED_SHEAR = 102,
         STOKES_MMS_2D = 301,
+        FPC_2D = 302,
     };
     enum CouplingFormulation : unsigned int {
         FULLY_COUPLED = 0,

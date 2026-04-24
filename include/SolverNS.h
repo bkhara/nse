@@ -56,7 +56,7 @@ namespace fracture {
             }
 
             bnlf = new mfem::ParBlockNonlinearForm(femach.fespace_block_up);
-            bnlf->AddDomainIntegrator(new StokesBlockIntegBDF2(idata, tlf, 2, femach.ordering, &(dynamic_cast<PCase_Stokes_MMS_2D*>(pcase)->forcing_rhs)));
+            bnlf->AddDomainIntegrator(new StokesBlockIntegBDF2(idata, tlf, 2, femach.ordering, pcase->forcing_rhs));
         }
 
         ~NSEBlockOperator() override {
@@ -152,7 +152,7 @@ namespace fracture {
             : myrank(Mpi::WorldRank()),
               idata(idata), fem(fem), tlf(tlf), pcase(pcase) {
             if (myrank == 0) {
-                mfem::out << "SolverElasticity constructor\n";
+                mfem::out << "NSSolver constructor\n";
             }
 
             pcase->ObtainElasticityBoundaryDOFs();

@@ -1,0 +1,49 @@
+# 301: mms2d, 302: fpc2d
+pcase = 302;
+
+checkpointing_inputs = {
+    # in
+    restart_from_chkpt = false;
+    chkpt_root = "./checkpoint";
+    chkpt_dir_in = "";
+    # out
+    chkpt_write_frequency = 100;
+}
+
+mesh_config = {
+    use_external_mesh = true;
+    mesh_file = "fpc2d_mesh_0.msh";
+    nsd = 2;
+    lengths = [1.,1.,3.]
+    nels = [12,12,12]
+}
+
+el_vdim = 2
+
+fe_primal = {
+    order = 2
+}
+fe_latent = {
+    space = "h1"
+    order = 1
+}
+
+time_marching = {
+    time_dependence_type = "dy"; # "qs" or "dy"
+    compute_initial_acceleration = false;
+    t_max = 2
+    dt = 0.1
+    gen_alpha = {
+        use_explicit = false
+        use_newmark = false
+        use_hht = false
+        use_wbz = false
+        rho_inf = 0.5
+    }
+}
+
+stokesmms_inputs = {
+    Re = 0.5
+}
+
+file_write_freq = 5;

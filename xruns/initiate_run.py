@@ -22,6 +22,7 @@ cl = BColors
 
 class CaseStrings:
     mms2 = "mms2"
+    fpc2 = "fpc2"
 cs = CaseStrings
 
 possible_scripts = [
@@ -84,7 +85,7 @@ class CopyScripts:
             self.copy_multirun_files(arg, destination_dir)
 
 def get_args(parser):
-    parser.add_argument("casename", type=str, help=f"Should be one of [ {cs.mms2} ] ]")
+    parser.add_argument("casename", type=str, help=f"Should be one of [ {cs.mms2} | {cs.fpc2} ] ]")
     parser.add_argument("-s", "--suffix", type=str, help=f"A suffix string that specifies the particular run", default = "")
     parser.add_argument("-e", "--exec", help=f"Copy the exec run scripts", action='store_true')
     parser.add_argument("-m", "--multi", help=f"Copy the multi run scripts", action='store_true')

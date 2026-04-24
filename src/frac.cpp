@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
     Hypre::Init();
 
     // parse arguments
-    const char *petscrc_file = "frac.petsc";
+    const char *petscrc_file = "ns.petsc";
     const char *config_file = "config.txt";
 
     OptionsParser args(argc, argv);

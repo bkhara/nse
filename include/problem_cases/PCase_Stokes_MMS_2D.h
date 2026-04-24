@@ -138,12 +138,13 @@ namespace fracture {
         };
 
         public:
-        MMS2DStokesRHS forcing_rhs;
         PCase_Stokes_MMS_2D(InputData& idata, FEMachinery& fem, TimeLevelFields& tlf)
             : ProblemCase(idata, fem, tlf),
         omega(M_PI),
-        exact_velocity(omega), exact_pressure(omega),
-        forcing_rhs(idata.stokes_mms2d_inputs.rho, idata.stokes_mms2d_inputs.mu, omega){
+        exact_velocity(omega), exact_pressure(omega) {
+
+            // instantiate forcing
+            forcing_rhs = new MMS2DStokesRHS(idata.stokes_mms2d_inputs.rho, idata.stokes_mms2d_inputs.mu, omega);
 
             // check parameters before proceeding
             {
@@ -224,7 +225,7 @@ namespace fracture {
             ProblemCase::SetTime(t);
             exact_velocity.SetTime(t);
             exact_pressure.SetTime(t);
-            forcing_rhs.SetTime(t);
+            forcing_rhs->SetTime(t);
         }
 
         void SetElasticityIC(FractureGridFields& fgf) override {

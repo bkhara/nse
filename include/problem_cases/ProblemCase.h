@@ -25,6 +25,8 @@ namespace fracture {
         Array<int> ess_tdof_list_u_loaded_X;
         Array<int> ess_tdof_list_u_loaded_Y;
 
+        VectorCoefficient *forcing_rhs = nullptr;
+
         ProblemCase(InputData& idata, FEMachinery& fem, TimeLevelFields &tlf)
             : idata(idata),
               fem(fem),
@@ -32,7 +34,9 @@ namespace fracture {
               vdim(fem.fespace_primal_u->GetVDim()) {
         }
 
-        virtual ~ProblemCase() = default;
+        virtual ~ProblemCase() {
+            delete forcing_rhs;
+        }
 
         // Optional exact fields (MMS / benchmarks)
         virtual const VectorCoefficient* ExactU() const { return nullptr; }
