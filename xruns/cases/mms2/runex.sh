@@ -3,7 +3,7 @@
 NPROC=8
 BUILD_DIR="${PROJECT_DIR}/build"
 
-FEXEC="frac"
+FEXEC="nse"
 CMD_ARGS="--petscopts ns.petsc --config config.txt"
 MPIRUN="mpirun"
 #MPIRUN="srun --mpi=pmix"

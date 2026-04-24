@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.11)
 
-project(fracture LANGUAGES C CXX)
+project(nse LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,5 +70,5 @@ set(MY_SOURCES
 #  target_link_libraries(${exe} PRIVATE core)
 #endforeach ()
 
-add_executable(frac ${MY_SOURCES})
-target_link_libraries(frac PRIVATE core)
+add_executable(nse ${MY_SOURCES})
+target_link_libraries(nse PRIVATE core)
