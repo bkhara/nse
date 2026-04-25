@@ -166,7 +166,8 @@ namespace fracture {
                 // print final info
                 if (!myrank) {
                     std::cout << "Step=" << n << ", [STEP-time::NS](total,sec)=" << stage_timing_ns << ", [STAG-time::NS](avg,sec)=" << stage_timing_ns/staggered_iters_this_step << "\n";
-                    mfem::out << "\n";
+                    std::cout << "t=" << t << "\n";
+                    std::cout << "\n";
                 }
             }
 

@@ -110,8 +110,9 @@ namespace fracture {
             // Replace ymin/ymax/Umax by your input-data values if available.
             // ------------------------------------------------------------------
 
-            const double ymin = -2.5;
-            const double ymax = 2.5; // common benchmark channel height
+            const double channel_width = idata.fpc2d_inputs.H;
+            const double ymin = -channel_width / 2.0;
+            const double ymax = channel_width / 2.0; // common benchmark channel height
             const double Umax = 1.0; // example value; choose based on desired Re
 
             FunctionCoefficient inlet_ux(
@@ -188,7 +189,7 @@ namespace fracture {
                                                     2,
                                                     fem.ordering,
                                                     -1,
-                                                    false);
+                                                    idata.fpc2d_inputs.cylinder_flip_sign_for_force_calc);
             if (Mpi::Root()) {
                 std::ofstream file(forcefilename.c_str(), std::ios_base::app);
                 file << t << "," << dl.drag << "," << dl.lift << "\n";

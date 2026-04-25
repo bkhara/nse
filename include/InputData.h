@@ -639,6 +639,16 @@ namespace fracture {
         }
     };
 
+    struct FPC2DInputs {
+        double H = 5.0; // channel width
+        bool cylinder_flip_sign_for_force_calc = false;
+        void ReadFromFile(InputReader &reader) {
+            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading FPC2DInputs\n"; }
+            reader.ReadValue("fpc2d_inputs.H", H);
+            reader.ReadValue("fpc2d_inputs.cylinder_flip_sign_for_force_calc", cylinder_flip_sign_for_force_calc);
+        }
+    };
+
     struct StreamingInputs {
         bool if_stream = false;
         std::string host = std::string("localhost");
@@ -744,6 +754,8 @@ namespace fracture {
         StaggeredIterationConfig stag_config;
         Experimental experimental;
 
+        FPC2DInputs fpc2d_inputs;
+
         InputData() : conf(true), reader("", &config) {
         }
 
@@ -764,6 +776,7 @@ namespace fracture {
             time_marching.ReadFromFile(reader);
             pcase_config.ReadFromFile(reader);
             flow_properties.ReadFromFile(reader);
+            fpc2d_inputs.ReadFromFile(reader);
         }
     };
 }

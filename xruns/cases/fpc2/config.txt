@@ -1,6 +1,11 @@
 # 301: mms2d, 302: fpc2d
 pcase = 302;
 
+fpc2d_inputs = {
+    H = 5.0;
+    cylinder_flip_sign_for_force_calc = false;
+}
+
 Re = 1.0;
 disable_convection = false;
 
