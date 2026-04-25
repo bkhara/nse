@@ -1,6 +1,8 @@
 # 0: aps2d, 1: aps3d, 100: beam2d, 101: mms2d, 102: nshear
 pcase = 301;
 
+Re = 1.0;
+
 checkpointing_inputs = {
     # in
     restart_from_chkpt = false;
@@ -39,10 +41,6 @@ time_marching = {
         use_wbz = false
         rho_inf = 0.5
     }
-}
-
-stokesmms_inputs = {
-    Re = 0.05
 }
 
 file_write_freq = 10;

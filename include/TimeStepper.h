@@ -22,8 +22,6 @@ namespace fracture {
         TimeLevelFields &tlf;
         ProblemCase *pcase;
 
-        FractureIntegratorBase fibase;
-
         ParaViewDataCollection pvdc;
         ParaViewDataCollection pvdc_q;
 
@@ -38,7 +36,7 @@ namespace fracture {
 
     public:
         TimeStepper(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
-            : myrank(Mpi::WorldRank()), idata(idata), fem(fem), tlf(tlf), pcase(pcase), fibase(idata, tlf),
+            : myrank(Mpi::WorldRank()), idata(idata), fem(fem), tlf(tlf), pcase(pcase),
               pvdc("pv", fem.mesh), pvdc_q("pvq", fem.mesh),
               t_ns(MPI_COMM_WORLD, "solve_elasticity"),
               t_pv_writer(MPI_COMM_WORLD, "pv_writer") {

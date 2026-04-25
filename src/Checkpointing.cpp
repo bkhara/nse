@@ -283,18 +283,6 @@ namespace fracture {
             save_pgf("v", tlf.current.v);
             save_pgf("a", tlf.current.a);
         }
-        if (idata.method_config.use_ie_pg()) {
-            save_pgf("psi", tlf.current.psi);
-        }
-        if (idata.method_config.use_ie_al()) {
-            save_pgf("lambda", tlf.current.lambda);
-        }
-
-        // 3) QuadratureFunction (rank-local)
-        if (idata.method_config.use_ie_hf() or
-            (idata.method_config.use_ie_pg() and idata.pg_config.use_history_function)) {
-            save_Qf("Hq", tlf.current.Hq);
-        }
 
         // 4) metadata (rank 0)
         WriteRestartMeta(dir + "/restart.meta", meta, comm);
@@ -357,18 +345,6 @@ namespace fracture {
         if (idata.time_marching.is_dynamic()) {
             load_pgf("v", tlf.current.v);
             load_pgf("a", tlf.current.a);
-        }
-        if (idata.method_config.use_ie_pg()) {
-            load_pgf("psi", tlf.current.psi);
-        }
-        if (idata.method_config.use_ie_al()) {
-            load_pgf("lambda", tlf.current.lambda);
-        }
-
-        // load QF
-        if (idata.method_config.use_ie_hf() or
-            (idata.method_config.use_ie_pg() and idata.pg_config.use_history_function)) {
-            load_Qf("Hq", tlf.current.Hq);
         }
 
         MPI_Barrier(comm);

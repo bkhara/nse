@@ -627,14 +627,13 @@ namespace fracture {
         }
     };
 
-    struct StokesMMS2DInputs {
-        double rho = 1.0;
+    struct FlowPropertiesInputs {
         double Re = 1.0;
-        double mu = 1.0;
+        double nu = 1.0;
         void ReadFromFile(InputReader &reader) {
-            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading StokesMMS2DInputs\n"; }
-            reader.ReadValue("stokesmms_inputs.Re", Re);
-            mu = 1./Re;
+            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading FlowProperties\n"; }
+            reader.ReadValue("Re", Re);
+            nu = 1. / Re;
         }
     };
 
@@ -731,25 +730,17 @@ namespace fracture {
         int file_write_freq = 2;
         int el_vdim = 1;
 
+        ProblemCaseConfig pcase_config;
+        FlowPropertiesInputs flow_properties_inputs;
+
         CheckpointingInputs checkpointing_inputs;
         StreamingInputs streaming_inputs;
         MeshConfig mesh_config;
         TimeMarchingConfig time_marching;
-        MethodConfig method_config;
-        PGConfig pg_config;
-        HFConfig hf_config;
-        ALConfig al_config;
-        PenaltyConfig penalty_config;
-        StaggeredIterationConfig stag_config;
-        RefinementConfig ref_config;
-        FractureData fracture_data;
-        Experimental experimental;
-        ProblemCaseConfig pcase_config;
-        NotchedShearInputs nshear_inputs;
-        DynamicBranchingInputs dynamic_branching_inputs;
-        KalthoffWinklerInputs kw_inputs;
 
-        StokesMMS2DInputs stokes_mms2d_inputs;
+        RefinementConfig ref_config;
+        StaggeredIterationConfig stag_config;
+        Experimental experimental;
 
         InputData() : conf(true), reader("", &config) {
         }
@@ -764,30 +755,13 @@ namespace fracture {
             reader.ReadValue("fe_latent.space", fes_config_latent.space);
             reader.ReadValue("fe_latent.order", fes_config_latent.order);
             reader.ReadValue("file_write_freq", file_write_freq);
+
             checkpointing_inputs.ReadFromFile(reader);
             streaming_inputs.ReadFromFile(reader);
             mesh_config.ReadFromFile(reader);
             time_marching.ReadFromFile(reader);
             pcase_config.ReadFromFile(reader);
-            fracture_data.ReadFromFile(reader);
-            method_config.ReadFromFile(reader);
-            pg_config.ReadFromFile(reader);
-            {
-                if (petsc_filename == std::string("fract.petsc.bddc")) {
-                    pg_config.use_bddc_solver = true;
-                }
-            }
-            hf_config.ReadFromFile(reader);
-            al_config.ReadFromFile(reader);
-            penalty_config.ReadFromFile(reader);
-            stag_config.ReadFromFile(reader);
-            ref_config.ReadFromFile(reader);
-            experimental.ReadFromFile(reader);
-            // reader.PrintConfig("dump.cfg");
-            nshear_inputs.ReadFromFile(reader);
-            dynamic_branching_inputs.ReadFromFile(reader);
-            kw_inputs.ReadFromFile(reader);
-            stokes_mms2d_inputs.ReadFromFile(reader);
+            flow_properties_inputs.ReadFromFile(reader);
         }
     };
 }

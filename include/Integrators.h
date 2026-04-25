@@ -43,273 +43,10 @@ namespace fracture {
         }
     };
 
-
-    class FractureIntegratorBase {
-    public:
-        FractureIntegratorBase(const InputData& idata, const TimeLevelFields& tlf)
-            : idata(idata),
-              tlf(tlf),
-              fdata(idata.fracture_data),
-              nsd(tlf.current.u.ParFESpace()->GetMesh()->Dimension()),
-              el_vdim(tlf.current.u.ParFESpace()->GetVDim()),
-              vcurr(el_vdim, nsd),
-              vprev_1(el_vdim, nsd),
-              vprev_pg(el_vdim, nsd) {
-        }
-
-    protected:
-        const InputData& idata;
-        const TimeLevelFields& tlf;
-        const FractureData &fdata;
-        const int nsd;
-        const int el_vdim;
-
-        FracGPValues vcurr;
-        FracGPValues vprev_1;
-        FracGPValues vprev_pg;
-
-        void ComputeGPValues(ElementTransformation &T, const IntegrationPoint &ip, const FractureGridFields &fgf, FracGPValues &vals) const {
-            fgf.u.GetVectorValue(T, ip, vals.u);
-            fgf.v.GetVectorValue(T, ip, vals.v);
-            fgf.a.GetVectorValue(T, ip, vals.a);
-            vals.c = fgf.c.GetValue(T, ip);
-            vals.psi = fgf.psi.GetValue(T, ip);
-            vals.lambda = fgf.lambda.GetValue(T, ip);
-
-            fgf.u.GetVectorGradient(T, vals.du);
-            fgf.v.GetVectorGradient(T, vals.dv);
-            fgf.a.GetVectorGradient(T, vals.da);
-            fgf.c.GetGradient(T, vals.dc);
-            fgf.psi.GetGradient(T, vals.dpsi);
-
-            if (vals.el_vdim == 1) {
-                vals.e_density = 0;
-                for (int i = 0; i < vals.nsd; i++) {
-                    vals.e_density += vals.du(0,i) * vals.du(0,i);
-                }
-            } else if (vals.el_vdim > 1) {
-                DenseMatrix epsilon(vals.el_vdim, vals.nsd);
-                for (int i = 0; i < vals.el_vdim; i++) {
-                    for (int j = 0; j < vals.nsd; j++) {
-                        epsilon(i,j) = 0.5 * (vals.du(i, j) + vals.du(j, i));
-                    }
-                }
-
-                double trace = 0.;
-                for (int i = 0; i < vals.el_vdim; i++) {
-                    trace += epsilon(i, i);
-                }
-                double eps_eps = 0.;
-                for (int i = 0; i < vals.el_vdim; i++) {
-                    for (int j = 0; j < vals.el_vdim; j++) {
-                        eps_eps += epsilon(i, j) * epsilon(i, j);
-                    }
-                }
-                vals.e_density = 0.5 * fdata.lambda * trace * trace + fdata.mu * eps_eps;
-            }
-        }
-
-        static inline double g_AT2(double d, double kappa) {
-            const double a = 1.0 - d;
-            return a * a + kappa;
-        }
-
-        // Build B matrix (3 x 2*dof) for 2D engineering shear Voigt
-        static inline void BuildB(const int dof, const DenseMatrix& dN, DenseMatrix& B) {
-            B.SetSize(3, 2 * dof);
-            B = 0.0;
-            for (int a = 0; a < dof; a++) {
-                const double dN_dx = dN(a, 0);
-                const double dN_dy = dN(a, 1);
-
-                const int ax = 0 * dof + a;
-                const int ay = 1 * dof + a;
-
-                B(0, ax) = dN_dx; // exx
-                B(1, ay) = dN_dy; // eyy
-                B(2, ax) = dN_dy; // gxy
-                B(2, ay) = dN_dx; // gxy
-            }
-        }
-
-        static double CalcElementSize(const IntegrationRule *ir, ElementTransformation &T, const int nsd) {
-            double meas = 0.0;
-            for (int i = 0; i < ir->GetNPoints(); i++) {
-                const IntegrationPoint& ip = ir->IntPoint(i);
-                T.SetIntPoint(&ip);
-                meas += ip.weight * T.Weight();
-            }
-            double h = std::pow(meas, 1.0 / ((double) nsd));
-            return h;
-        }
-
-        static double EvalAtQuad(const Vector& elfun, int dof, const Vector& N) {
-            MFEM_VERIFY(N.Size() == dof, "EvalAtQuad: N has wrong size.");
-
-            double result = 0.0;
-            for (int a = 0; a < dof; a++) {
-                result += elfun(a) * N(a);
-            }
-            return result;
-        }
-
-        static void EvalGradAtQuad(const Vector& elfun, int dof, const DenseMatrix& dN, Vector& grad) {
-            const int nsd = dN.Width();
-            MFEM_VERIFY(dN.Height() == dof, "EvalGradAtQuad: dN has wrong height.");
-
-            grad.SetSize(nsd);
-            grad = 0.;
-            for (int k = 0; k < nsd; k++) {
-                for (int a = 0; a < dof; a++) {
-                    grad(k) += elfun(a) * dN(a, k);
-                }
-            }
-        }
-
-        static void EvalAtQuadMDOF(const Vector &elfun,
-                               int dof,
-                               int vdim,
-                               Ordering::Type ordering,
-                               const Vector &N, // size: dof
-                               Vector &val_q) // size: vdim (output)
-        {
-            MFEM_VERIFY(N.Size() == dof, "EvalAtQuadMDOF: N has wrong size.");
-            MFEM_VERIFY(elfun.Size() == vdim * dof,
-                        "EvalAtQuadMDOF: elfun size must be vdim*dof.");
-
-            val_q.SetSize(vdim);
-            val_q = 0.0;
-
-            auto local_idx = [=](int a, int comp) {
-                if (ordering == Ordering::byNODES) {
-                    // [u_x(node0), u_y(node0), u_x(node1), u_y(node1), ...]
-                    return vdim * a + comp;
-                } else // Ordering::byVDIM
-                {
-                    // [u_x(node0..dof-1), u_y(node0..dof-1), ...]
-                    return dof * comp + a;
-                }
-            };
-
-            for (int a = 0; a < dof; a++) {
-                const double Na = N(a);
-                for (int comp = 0; comp < vdim; comp++) {
-                    const int idx = local_idx(a, comp);
-                    val_q(comp) += elfun(idx) * Na;
-                }
-            }
-        }
-
-        static void EvalGradAtQuadMDOF(const Vector &elfun,
-                                   int dof,
-                                   int vdim,
-                                   Ordering::Type ordering,
-                                   const DenseMatrix &dN, // size: dof x nsd
-                                   DenseMatrix &grad_q) // size: vdim x nsd (output)
-        {
-            const int nsd = dN.Width();
-            MFEM_VERIFY(dN.Height() == dof, "EvalGradAtQuadMDOF: dN has wrong height.");
-            MFEM_VERIFY(elfun.Size() == vdim * dof,
-                        "EvalGradAtQuadMDOF: elfun size must be vdim*dof.");
-
-            grad_q.SetSize(vdim, nsd);
-            grad_q = 0.0;
-
-            auto local_idx = [=](int a, int comp) {
-                if (ordering == Ordering::byNODES) {
-                    return vdim * a + comp;
-                } else // Ordering::byVDIM
-                {
-                    return dof * comp + a;
-                }
-            };
-
-            for (int a = 0; a < dof; a++) {
-                for (int comp = 0; comp < vdim; comp++) {
-                    const int idx = local_idx(a, comp);
-                    const double ua = elfun(idx);
-                    for (int j = 0; j < nsd; j++) {
-                        // grad_q(comp, j) += u_a^comp * dN_a,j
-                        grad_q(comp, j) += ua * dN(a, j);
-                    }
-                }
-            }
-        }
-
-
-
-        void ComputeStressMatrix(const double lambda, const double mu, const DenseMatrix &strain, DenseMatrix &stress) const {
-            double trace = 0.;
-            for (int i = 0; i < nsd; i++) {
-                trace += strain(i,i);
-            }
-
-            stress.SetSize(nsd, nsd);
-            stress = 0.;
-            for (int i = 0; i < stress.Height(); i++) {
-                for (int j = 0; j < stress.Width(); j++) {
-                    stress(i, j) = mu * (strain(i, j) + strain(j, i));
-                    if (i == j) {
-                        stress(i, j) += lambda * trace;
-                    }
-                }
-            }
-        }
-
-        void ComputeStrainMatrix(const DenseMatrix &grad_u, DenseMatrix &strain) const {
-            strain.SetSize(nsd, nsd);
-            strain = 0.;
-            for (int i = 0; i < strain.Height(); i++) {
-                for (int j = 0; j < strain.Width(); j++) {
-                    strain(i, j) = 0.5 * (grad_u(i, j) + grad_u(j, i));
-                }
-            }
-        }
-
-        void ComputeBMatrix(const FiniteElement &el, const ElementTransformation &T, const DenseMatrix &dN, /*out*/  DenseMatrix &B) const {
-            int dof = el.GetDof();
-            const int ord = tlf.current.u.ParFESpace()->GetOrdering();
-            // Build B at this quadrature point
-            // eps11 = du1/dx, eps22 = du2/dy, gamma12 = du1/dy + du2/dx
-            B = 0.0;
-            for (int a = 0; a < dof; a++) {
-                const double dNa_dx = dN(a, 0);
-                const double dNa_dy = dN(a, 1);
-
-                int ux, uy; // column indices for u1_a and u2_a
-
-                if (ord == Ordering::byNODES) {
-                    // [u1_1, u2_1, u1_2, u2_2, ..., u1_dof, u2_dof]
-                    ux = el_vdim * a; // u1 at node a
-                    uy = el_vdim * a + 1; // u2 at node a
-                } else // Ordering::byVDIM
-                {
-                    // [u1_1, ..., u1_dof, u2_1, ..., u2_dof]
-                    ux = a; // u1 at node a
-                    uy = dof + a; // u2 at node a
-                }
-
-                // eps11 = du1/dx
-                B(0, ux) += dNa_dx;
-
-                // eps22 = du2/dy
-                B(1, uy) += dNa_dy;
-
-                // gamma12 = du1/dy + du2/dx
-                B(2, ux) += dNa_dy; // du1/dy
-                B(2, uy) += dNa_dx; // du2/dx
-            }
-        }
-
-    };
-
     class StokesIntegratorBase : public mfem::BlockNonlinearFormIntegrator {
     protected:
         const InputData &idata;
         const TimeLevelFields &tlf;
-
-        double rho;
-        double mu;
 
         mfem::VectorCoefficient *f_coeff;
 
@@ -397,7 +134,7 @@ namespace fracture {
               tlf(tlf),
               f_coeff(f_coeff),
               vdim(vdim),
-              ordering(ordering), rho(idata.stokes_mms2d_inputs.rho), mu(idata.stokes_mms2d_inputs.mu) {
+              ordering(ordering) {
         }
     };
 
@@ -444,6 +181,8 @@ namespace fracture {
 
             const double ctime = tlf.GetTime(); // t_{n+1}
             const double dt = tlf.GetTimeStep();
+
+            const double nu = idata.flow_properties_inputs.nu;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
                 const mfem::IntegrationPoint &ip = ir->IntPoint(iq);
@@ -496,14 +235,14 @@ namespace fracture {
                         const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
 
                         // BDF2 mass contribution from u^{n+1}
-                        (*elvec[0])(ia) += rho * (3.0 / (2.0 * dt)) * u_np1(c) * Nu(a) * wdet;
+                        (*elvec[0])(ia) += (3.0 / (2.0 * dt)) * u_np1(c) * Nu(a) * wdet;
 
                         // BDF2 history contribution
-                        (*elvec[0])(ia) += -rho * (4.0 * u_n(c) - u_nm1(c)) / (2.0 * dt) * Nu(a) * wdet;
+                        (*elvec[0])(ia) += -(4.0 * u_n(c) - u_nm1(c)) / (2.0 * dt) * Nu(a) * wdet;
 
                         // diffusion contribution
                         for (int j = 0; j < dim; j++) {
-                            (*elvec[0])(ia) += mu * grad_u_np1(c, j) * dNu(a, j) * wdet;
+                            (*elvec[0])(ia) += nu * grad_u_np1(c, j) * dNu(a, j) * wdet;
                         }
 
                         // pressure contribution
@@ -562,6 +301,8 @@ namespace fracture {
 
             const double dt = tlf.GetTimeStep();
 
+            const double nu = idata.flow_properties_inputs.nu;
+
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
                 const mfem::IntegrationPoint &ip = ir->IntPoint(iq);
                 T.SetIntPoint(&ip);
@@ -582,11 +323,11 @@ namespace fracture {
                 for (int a = 0; a < dof_u; a++) {
                     for (int b = 0; b < dof_u; b++) {
                         const double mass_ab =
-                                rho * (3.0 / (2.0 * dt)) * Nu(a) * Nu(b) * wdet;
+                                (3.0 / (2.0 * dt)) * Nu(a) * Nu(b) * wdet;
 
                         double diff_ab = 0.0;
                         for (int j = 0; j < dim; j++) {
-                            diff_ab += mu * dNu(a, j) * dNu(b, j) * wdet;
+                            diff_ab += nu * dNu(a, j) * dNu(b, j) * wdet;
                         }
 
                         for (int c = 0; c < vdim; c++) {

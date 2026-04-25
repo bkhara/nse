@@ -1,6 +1,8 @@
 # 301: mms2d, 302: fpc2d
 pcase = 302;
 
+Re = 1.0;
+
 checkpointing_inputs = {
     # in
     restart_from_chkpt = false;
@@ -40,10 +42,6 @@ time_marching = {
         use_wbz = false
         rho_inf = 0.5
     }
-}
-
-stokesmms_inputs = {
-    Re = 0.5
 }
 
 file_write_freq = 5;

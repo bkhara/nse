@@ -67,16 +67,14 @@ namespace fracture {
 
     class MMS2DStokesRHS : public VectorCoefficient {
     private:
-        double rho_;
-        double mu_;
+        double nu_;
         double omega_;
 
     public:
-        MMS2DStokesRHS(double rho,
-                       double mu,
+        MMS2DStokesRHS(double mu,
                        double omega)
             : VectorCoefficient(2),
-              rho_(rho), mu_(mu), omega_(omega) {
+              nu_(mu), omega_(omega) {
         }
 
         void Eval(Vector &f, ElementTransformation &T,
@@ -105,13 +103,13 @@ namespace fracture {
             // p  = sin(pi x) sin(pi y) cos(omega t)
 
             f[0] =
-                    -rho_ * omega_ * M_PI * sx * cy * st
-                    + 2.0 * mu_ * M_PI * M_PI * M_PI * sx * cy * ct
+                    -omega_ * M_PI * sx * cy * st
+                    + 2.0 * nu_ * M_PI * M_PI * M_PI * sx * cy * ct
                     + M_PI * cx * sy * ct;
 
             f[1] =
-                    +rho_ * omega_ * M_PI * cx * sy * st
-                    - 2.0 * mu_ * M_PI * M_PI * M_PI * cx * sy * ct
+                    +omega_ * M_PI * cx * sy * st
+                    - 2.0 * nu_ * M_PI * M_PI * M_PI * cx * sy * ct
                     + M_PI * sx * cy * ct;
         }
     };
@@ -144,7 +142,7 @@ namespace fracture {
         exact_velocity(omega), exact_pressure(omega) {
 
             // instantiate forcing
-            forcing_rhs = new MMS2DStokesRHS(idata.stokes_mms2d_inputs.rho, idata.stokes_mms2d_inputs.mu, omega);
+            forcing_rhs = new MMS2DStokesRHS(idata.flow_properties_inputs.nu, omega);
 
             // check parameters before proceeding
             {
