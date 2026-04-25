@@ -718,6 +718,72 @@ namespace nse {
             tauC = h * h / (tauM + 1.0e-30);
         }
 
+        static void CalcTauMFEMWithNu(mfem::ElementTransformation &T,
+                                           const mfem::Vector &u,
+                                           const double nu,
+                                           const double Ci_f,
+                                           const double dt,
+                                           double &tauM,
+                                           double &tauC) {
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(T.GetDimension() == dim,
+                        "CalcTauMFEMWithNu assumes dim == space dim.");
+            MFEM_VERIFY(u.Size() == dim,
+                        "Velocity vector has wrong dimension.");
+
+            const mfem::DenseMatrix &J = T.Jacobian();
+
+            mfem::DenseMatrix ksiX(dim, dim);
+            mfem::CalcInverse(J, ksiX);
+
+            mfem::DenseMatrix Ge(dim, dim);
+            Ge = 0.0;
+
+            for (int i = 0; i < dim; i++) {
+                for (int j = 0; j < dim; j++) {
+                    for (int k = 0; k < dim; k++) {
+                        Ge(i, j) += ksiX(k, i) * ksiX(k, j);
+                    }
+                }
+            }
+
+            double u_Gu = 0.0;
+            for (int i = 0; i < dim; i++) {
+                for (int j = 0; j < dim; j++) {
+                    u_Gu += u(i) * Ge(i, j) * u(j);
+                }
+            }
+
+            double G_G = 0.0;
+            for (int i = 0; i < dim; i++) {
+                for (int j = 0; j < dim; j++) {
+                    G_G += Ci_f * nu * nu * Ge(i, j) * Ge(i, j);
+                }
+            }
+
+            const double denom_squared =
+                    (4.0 / (dt * dt)) + u_Gu + G_G;
+
+            tauM = 1.0 / std::sqrt(denom_squared + 1.0e-30);
+
+            mfem::Vector ge(dim);
+            ge = 0.0;
+
+            for (int i = 0; i < dim; i++) {
+                for (int j = 0; j < dim; j++) {
+                    ge(i) += ksiX(j, i);
+                }
+            }
+
+            double g_g = 0.0;
+            for (int i = 0; i < dim; i++) {
+                g_g += ge(i) * ge(i);
+            }
+
+            tauC = 1.0 / (tauM * g_g + 1.0e-30);
+        }
+
     public:
         NSEBlockIntegBDF2VMSConservative(const InputData &idata,
                                          const TimeLevelFields &tlf,
@@ -797,7 +863,9 @@ namespace nse {
 
                 double tauM = 0.0;
                 double tauC = 0.0;
-                ComputeTau(u, h, dt, nu, tauM, tauC);
+                // ComputeTau(u, h, dt, nu, tauM, tauC);
+                CalcTauMFEMWithNu(T, u, nu, 36.0, dt, tauM, tauC);
+
 
                 // ------------------------------------------------------------
                 // Conservative strong momentum residual for stabilization:
@@ -963,7 +1031,8 @@ namespace nse {
 
                 double tauM = 0.0;
                 double tauC = 0.0;
-                ComputeTau(u, h, dt, nu, tauM, tauC);
+                // ComputeTau(u, h, dt, nu, tauM, tauC);
+                CalcTauMFEMWithNu(T, u, nu, 36.0, dt, tauM, tauC);
 
                 // Conservative strong momentum residual.
                 RM.SetSize(vdim);
