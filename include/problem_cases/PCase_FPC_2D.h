@@ -8,7 +8,7 @@
 #include "Utils.h"
 
 namespace nse {
-    struct DragLift {
+    struct DragLiftForces {
         double drag = 0.0;
         double lift = 0.0;
     };
@@ -186,19 +186,26 @@ namespace nse {
             cylinder_marker = 0;
             cylinder_marker[CYLINDER - 1] = 1;
 
-            DragLift dl = ComputeDragLiftOnBoundary(cylinder_marker,
+            DragLiftForces dl = ComputeDragLiftOnBoundary(cylinder_marker,
                                                     2,
                                                     fem.ordering,
                                                     -1,
                                                     idata.fpc2d_inputs.cylinder_flip_sign_for_force_calc);
+
+            double rho = 1.0;
+            double Uref = 1.0; // the max at mid-channel
+            double D = 1.0; // diameter of the cylinder
+            double reference_force = 0.5 * rho * Uref * Uref * D;
+            double Cd = dl.drag / reference_force;
+            double Cl = dl.lift / reference_force;
             if (Mpi::Root()) {
                 std::ofstream file(forcefilename.c_str(), std::ios_base::app);
-                file << t << "," << dl.drag << "," << dl.lift << "\n";
+                file << t << "," << Cd << "," << Cl << "\n";
                 file.close();
             }
             if (Mpi::Root()) {
                 std::ofstream file(forcefilename.c_str(), std::ios_base::app);
-                std::cout << "t=" << t << ", Cd=" << dl.drag << ", Cl=" << dl.lift << "\n";
+                std::cout << "t=" << t << ", Cd=" << Cd << ", Cl=" << Cl << "\n";
                 file.close();
             }
         }
@@ -209,7 +216,7 @@ namespace nse {
         void RegisterParaviewFields(ParaViewDataCollection& pvdc, ParaViewDataCollection& pvdc_q) override {
         }
 
-        DragLift ComputeDragLiftOnBoundary(const mfem::Array<int>& bdr_marker,
+        DragLiftForces ComputeDragLiftOnBoundary(const mfem::Array<int>& bdr_marker,
                                            const int vdim,
                                            const mfem::Ordering::Type ordering,
                                            const int quad_order = -1,
@@ -357,7 +364,7 @@ namespace nse {
             MPI_Allreduce(local_force, global_force, 2, MPI_DOUBLE, MPI_SUM,
                           pmesh.GetComm());
 
-            DragLift dl;
+            DragLiftForces dl;
 
             dl.drag = global_force[0];
             dl.lift = global_force[1];
