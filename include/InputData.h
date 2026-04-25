@@ -225,7 +225,7 @@ namespace nse {
     };
     struct MethodConfig {
         CouplingFormulation coupling_form = FULLY_COUPLED;
-        std::string stab_scheme = std::string(NSStabilizationMethod::SUPG_STABILIZED);
+        std::string stab_scheme = std::string(NSStabilizationMethod::VMS_STABILIZED);
 
         bool use_stab_none() const {
             return stab_scheme == NSStabilizationMethod::UNSTABILIZED;
@@ -720,6 +720,8 @@ namespace nse {
         MeshConfig mesh_config;
         TimeMarchingConfig time_marching;
 
+        MethodConfig method_config;
+
         RefinementConfig ref_config;
         StaggeredIterationConfig stag_config;
         Experimental experimental;
@@ -747,6 +749,7 @@ namespace nse {
             pcase_config.ReadFromFile(reader);
             flow_properties.ReadFromFile(reader);
             fpc2d_inputs.ReadFromFile(reader);
+            method_config.ReadFromFile(reader);
         }
     };
 }

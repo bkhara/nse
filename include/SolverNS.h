@@ -63,6 +63,9 @@ namespace nse {
                     pcase->outlet_marker
                     );
             }
+            if (idata.method_config.use_stab_vms()) {
+                bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2VMSConservative(idata, tlf, 2, femach.ordering, pcase->forcing_rhs));
+            }
         }
 
         ~NSEBlockOperator() override {
@@ -84,29 +87,6 @@ namespace nse {
             bB.GetBlock(0).SetSubVector(ess_tdof_list_u, 0.0);
             bB.GetBlock(1).SetSubVector(ess_tdof_list_p, 0.0);
         }
-
-        // mfem::Operator &GetGradient(const mfem::Vector &U) const override {
-        //     delete matJ;
-        //     matJ = nullptr;
-        //
-        //     // mfem::BlockVector bU(const_cast<double *>(U.GetData()), t_offsets);
-        //     // tlf.current.u.SetFromTrueDofs(bU.GetBlock(0));
-        //     // tlf.current.p.SetFromTrueDofs(bU.GetBlock(1));
-        //
-        //     mfem::Operator &J = bnlf->GetGradient(U);
-        //     const Operator::Type OPTYPE = Operator::PETSC_MATAIJ;
-        //     matJ = new PetscParMatrix(femach.fespace_primal_u->GetComm(), &J, OPTYPE);
-        //     MFEM_VERIFY(matJ, "Expected HypreParMatrix from bnlf->GetGradient(U)");
-        //     {
-        //         auto *Je = matJ->EliminateRowsCols(pcase->ess_tdof_list_u);
-        //         delete Je;
-        //     }
-        //     {
-        //         auto *Je = matJ->EliminateRowsCols(pcase->ess_tdof_list_p);
-        //         delete Je;
-        //     }
-        //     return *matJ;
-        // }
 
         mfem::Operator &GetGradient(const mfem::Vector &U) const override {
             // 1. Clean up the previous Jacobian to prevent memory leaks

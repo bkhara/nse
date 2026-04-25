@@ -1,9 +1,6 @@
 # 0: aps2d, 1: aps3d, 100: beam2d, 101: mms2d, 102: nshear
 pcase = 301;
 
-Re = 1.0;
-disable_convection = true;
-
 checkpointing_inputs = {
     # in
     restart_from_chkpt = false;
@@ -43,5 +40,13 @@ time_marching = {
         rho_inf = 0.5
     }
 }
+
+Re = 1.0;
+disable_convection = false;
+method_config = {
+    stab_scheme = "none"; # none or vms
+    coupling_form = 0; # 0: coupled, 1: uncoupled
+}
+
 
 file_write_freq = 10;
