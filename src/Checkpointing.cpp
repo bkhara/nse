@@ -7,19 +7,7 @@
 #include "TimeLevelFields.h"
 #include "Checkpointing.h"
 
-namespace fracture {
-    void Checkpointing::MakeCheckpointDir(const std::string &dir, MPI_Comm comm) {
-        int rank;
-        MPI_Comm_rank(comm, &rank);
-
-        if (rank == 0) {
-            // mkdir -p behavior (one level). If you want nested, add your own helper.
-            // If it exists, that's fine.
-            ::mkdir(dir.c_str(), 0775);
-        }
-        MPI_Barrier(comm);
-    }
-
+namespace nse {
     void Checkpointing::MkdirP(const std::string &path, MPI_Comm comm) {
         int rank;
         MPI_Comm_rank(comm, &rank);
@@ -50,12 +38,6 @@ namespace fracture {
         MPI_Comm_rank(comm, &rank);
         std::ostringstream ss;
         ss << "." << std::setw(width) << std::setfill('0') << rank;
-        return ss.str();
-    }
-
-    std::string Checkpointing::StepDir(const std::string &root, int step) {
-        std::ostringstream ss;
-        ss << root << "/chkpt_" << std::setw(8) << std::setfill('0') << step;
         return ss.str();
     }
 
@@ -106,10 +88,6 @@ namespace fracture {
         m.dt = dbuf[1];
 
         return m;
-    }
-
-    char Checkpointing::SlotForStep(int step) {
-        return (step % 2 == 0) ? 'A' : 'B';
     }
 
     char Checkpointing::SlotForStep(int step, int chk_every) {
@@ -245,54 +223,6 @@ namespace fracture {
         }
     }
 
-    void Checkpointing::WriteCheckpointPlain(InputData &idata, FEMachinery &fem,
-                                        TimeLevelFields &tlf, const RestartMeta &meta, MPI_Comm comm) {
-        std::string root = idata.checkpointing_inputs.chkpt_root;
-        MkdirP(root, comm);
-
-        const char slot = SlotForStep(meta.step, idata.checkpointing_inputs.chkpt_write_frequency);
-        const std::string dir = root + "/" + std::string(1, slot);
-
-        const std::string rs = RankSuffix(comm);
-
-        // Clean slot directory before writing new checkpoint into it
-        RemoveAllInDir(dir, comm);
-
-        // 1) mesh (rank-local)
-        {
-            std::ofstream os(dir + "/mesh" + rs);
-            MFEM_VERIFY(os, "Cannot open mesh file for write");
-            fem.mesh->Print(os);
-        }
-        WriteParallelMesh(dir, *fem.mesh, comm);
-
-        // 2) ParGridFunctions (rank-local)
-        auto save_pgf = [&](const std::string &name, const ParGridFunction &gf) {
-            std::ofstream os(dir + "/" + name + rs);
-            MFEM_VERIFY(os, "Cannot open " << name << " for write");
-            gf.Save(os);
-        };
-        auto save_Qf = [&](const std::string &name, const QuadratureFunction &qf) {
-            std::ofstream os(dir + "/" + name + rs);
-            MFEM_VERIFY(os, "Cannot open " << name << " for write");
-            qf.Save(os);
-        };
-        save_pgf("u", tlf.current.u);
-        save_pgf("c", tlf.current.c);
-        if (idata.time_marching.is_dynamic()) {
-            save_pgf("v", tlf.current.v);
-            save_pgf("a", tlf.current.a);
-        }
-
-        // 4) metadata (rank 0)
-        WriteRestartMeta(dir + "/restart.meta", meta, comm);
-
-        MPI_Barrier(comm);
-        WriteDoneMarker(dir, comm);
-        WriteCurrentSlot(root, slot, comm);
-        MPI_Barrier(comm);
-    }
-
     char Checkpointing::ChooseValidSlot(const std::string &root, MPI_Comm comm) {
         // Prefer CURRENT; if invalid, fall back to the other slot if it has DONE.
         char cur = ReadCurrentSlot(root, comm);
@@ -304,192 +234,6 @@ namespace fracture {
         MFEM_VERIFY(HasDoneMarker(otherdir, comm),
                     "No valid checkpoint found: neither slot has DONE");
         return other;
-    }
-
-     void Checkpointing::ReadCheckpointPlain(InputData &idata, TimeLevelFields &tlf, RestartMeta &meta_out, MPI_Comm comm) {
-        const std::string dir = idata.checkpointing_inputs.chkpt_root + "/" + std::string(1, idata.checkpointing_inputs.in_slot);
-        const std::string rs = RankSuffix(comm);
-
-        // meta first (so caller can set step/t/dt)
-        meta_out = ReadRestartMeta(dir + "/restart.meta", comm);
-
-        // IMPORTANT:
-        // After reading the mesh, you must ensure fes_u, fes_c, and qspace are
-        // defined on *this* mesh in the same way they were during the run.
-        // If your code currently builds fes_u/fes_c earlier, refactor so you can rebuild them here.
-
-        // load PGFs
-        auto load_pgf = [&](const std::string &name, ParGridFunction &gf) {
-            std::stringstream fn;
-            fn << dir + "/" + name + rs;
-            std::ifstream is(fn.str());
-            if (!Mpi::WorldRank()) {
-                std::cout << "Reading " << name << " from " << name << ".*" << std::endl;
-            }
-            MFEM_VERIFY(is, "Cannot open " << name << " for read");
-            gf.Load(is);
-        };
-        auto load_Qf = [&](const std::string &name, QuadratureFunction &qf) {
-            std::stringstream fn;
-            fn << dir + "/" + name + rs;
-            std::ifstream is(fn.str());
-            if (!Mpi::WorldRank()) {
-                std::cout << "Reading " << name << " from " << name << ".*" << std::endl;
-            }
-            MFEM_VERIFY(is, "Cannot open " << name << " for read");
-            qf.Load(is);
-        };
-
-        load_pgf("u", tlf.current.u);
-        load_pgf("c", tlf.current.c);
-        if (idata.time_marching.is_dynamic()) {
-            load_pgf("v", tlf.current.v);
-            load_pgf("a", tlf.current.a);
-        }
-
-        MPI_Barrier(comm);
-    }
-
-    void Checkpointing::WriteCheckpointParaView(InputData &idata, FEMachinery &fem,
-                                            TimeLevelFields &tlf, const RestartMeta &meta,
-                                            MPI_Comm comm)
-    {
-        std::string root = idata.checkpointing_inputs.chkpt_root;
-        MkdirP(root, comm);
-
-        const char slot = SlotForStep(meta.step, idata.checkpointing_inputs.chkpt_write_frequency);
-        const std::string dir = root + "/" + std::string(1, slot);
-
-        const std::string rs = RankSuffix(comm);
-        (void)rs;
-
-        // Clean slot directory before writing new checkpoint into it
-        RemoveAllInDir(dir, comm);
-
-        // WRITE THE MESH
-        {
-            WriteParallelMesh(dir, *fem.mesh, comm);
-        }
-
-        // read the data files
-        const std::string dc_name = "paraview";
-        {
-            // IMPORTANT:
-            // The "collection name" here is the DataCollection name (it affects the .pvdc filename).
-            // To match your reader, we use `root` as the name and write into `dir` via PrefixPath.
-            mfem::ParaViewDataCollection dc(dc_name, fem.mesh);
-            dc.SetPrefixPath(dir);
-
-            // Optional, keep consistent if you care about ParaView output fidelity
-            // dc.SetLevelsOfDetail(1);
-            // dc.SetHighOrderOutput(true);
-
-            auto &g = tlf.current;
-
-            // ParGridFunctions
-            dc.RegisterField("u",      &g.u);
-            dc.RegisterField("v",      &g.v);
-            dc.RegisterField("a",      &g.a);
-            dc.RegisterField("c",      &g.c);
-            dc.RegisterField("psi",    &g.psi);
-            dc.RegisterField("lambda", &g.lambda);
-
-            // QuadratureFunctions
-            dc.RegisterQField("Hq",      &g.Hq);
-            dc.RegisterQField("ePlus_q", &g.ePlus_q);
-            dc.RegisterQField("c_q",     &g.c_q);
-
-            dc.Save();
-        }
-
-        // 4) metadata (rank 0)
-        WriteRestartMeta(dir + "/restart.meta", meta, comm);
-
-        MPI_Barrier(comm);
-        WriteDoneMarker(dir, comm);
-        WriteCurrentSlot(root, slot, comm);
-        MPI_Barrier(comm);
-    }
-
-    void Checkpointing::ReadCheckpointParaView(InputData &idata, FEMachinery& fem, TimeLevelFields &tlf, RestartMeta &meta_out, MPI_Comm comm) {
-        const std::string dir = idata.checkpointing_inputs.chkpt_root + "/" + std::string(1, idata.checkpointing_inputs.in_slot);
-        const std::string rs = RankSuffix(comm);
-
-        // meta first (so caller can set step/t/dt)
-        meta_out = ReadRestartMeta(dir + "/restart.meta", comm);
-
-        const std::string dc_name = "paraview";
-
-        {
-            mfem::ParaViewDataCollection dc(dc_name, fem.mesh);
-            dc.SetPrefixPath(dir);
-
-            // Register fields that exist inside tlf (these must be allocated on the right spaces already)
-            // Assuming: tlf.current is your FractureGridFields
-            auto &g = tlf.current;
-
-            dc.RegisterField("u", &g.u);
-            dc.RegisterField("v", &g.v);
-            dc.RegisterField("a", &g.a);
-            dc.RegisterField("c", &g.c);
-            dc.RegisterField("psi", &g.psi);
-            dc.RegisterField("lambda", &g.lambda);
-
-            dc.RegisterQField("Hq", &g.Hq);
-            dc.RegisterQField("ePlus_q", &g.ePlus_q);
-            dc.RegisterQField("c_q", &g.c_q);
-
-            // Actually read from disk into the registered objects
-            dc.Load();
-        }
-
-        // Optional: a couple sanity checks (cheap and very useful)
-        MFEM_VERIFY(tlf.current.u.Size() > 0 || fem.mesh->GetNE() == 0,
-                    "ReadCheckpoint: loaded u has Size()==0 (mesh/space mismatch or wrong directory/name).");
-        MFEM_VERIFY(tlf.current.Hq.Size() > 0 || fem.mesh->GetNE() == 0,
-                    "ReadCheckpoint: loaded Hq has Size()==0 (quad-space mismatch or wrong directory/name).");
-
-        MPI_Barrier(comm);
-    }
-
-    void Checkpointing::ReadCheckpointMeshVisIt(InputData &idata,
-                                            ParMesh*& mesh,
-                                            MPI_Comm comm) {
-        const std::string root = idata.checkpointing_inputs.chkpt_root;
-        const std::string dir = root + "/" + std::string(1, idata.checkpointing_inputs.in_slot);
-
-        // ---- Load mesh + fields ----
-        // Use a stable collection name (NOT the path). Keep it the same in writer and reader.
-        const char *dc_name = "chkpt";
-
-        mfem::VisItDataCollection dc(comm, dc_name);
-        dc.SetPrefixPath(dir);
-        dc.SetCycle(10);
-        dc.Load(10); // <- actually implemented (loads mesh + any fields in the checkpoint)
-
-        // // Replace fem.mesh with the loaded mesh (careful with ownership!)
-        // auto *loaded_pm = dynamic_cast<mfem::ParMesh *>(dc.GetMesh());
-        // MFEM_VERIFY(loaded_pm, "Checkpoint mesh is not a ParMesh.");
-        //
-        // mesh = new mfem::ParMesh(*loaded_pm);
-
-        mfem::Mesh *m = dc.GetMesh();
-        MFEM_VERIFY(m, "VisItDataCollection returned null mesh.");
-        if (auto *pm = dynamic_cast<mfem::ParMesh *>(m)) {
-            std::cout << "dynamic route worked\n";
-            // Parallel checkpoint: clone directly
-            mesh = new mfem::ParMesh(*pm);
-        } else {
-            std::cout << "dynamic route didn't work\n";
-            // Serial checkpoint: partition into ParMesh
-            // (This requires that m is a real mfem::Mesh.)
-            auto *sm = dynamic_cast<mfem::Mesh *>(m);
-            MFEM_VERIFY(sm, "Loaded mesh is neither ParMesh nor Mesh.");
-
-            mesh = new mfem::ParMesh(comm, *sm);
-        }
-
-        MPI_Barrier(comm);
     }
 
     void Checkpointing::ReadCheckpointVisIt(InputData &idata,
@@ -551,19 +295,12 @@ namespace fracture {
                 }
             }
         };
+        // quadrature functions -- uses my custom LoadQuadrature
+        load_Qf("Hq", g.Hq);
 
         // pargridfunctions -- uses the VisItDataCollection::GetParField
         load_GF("u", g.u);
-        load_GF("v", g.v);
-        load_GF("a", g.a);
-        load_GF("c", g.c);
-        load_GF("psi", g.psi);
-        load_GF("lambda", g.lambda);
-
-        // quadrature functions -- uses my custom LoadQuadrature
-        load_Qf("Hq", g.Hq);
-        load_Qf("ePlus_q", g.ePlus_q);
-        load_Qf("c_q", g.c_q);
+        load_GF("p", g.p);
 
         MPI_Barrier(comm);
     }
@@ -598,15 +335,7 @@ namespace fracture {
             auto &g = tlf.current;
 
             dc.RegisterField("u", &g.u);
-            dc.RegisterField("v", &g.v);
-            dc.RegisterField("a", &g.a);
-            dc.RegisterField("c", &g.c);
-            dc.RegisterField("psi", &g.psi);
-            dc.RegisterField("lambda", &g.lambda);
-
-            dc.RegisterQField("Hq", &g.Hq);
-            dc.RegisterQField("ePlus_q", &g.ePlus_q);
-            dc.RegisterQField("c_q", &g.c_q);
+            dc.RegisterField("p", &g.p);
 
             dc.Save(); // writes mesh + fields in a restart-loadable format
         }
@@ -662,17 +391,11 @@ namespace fracture {
         {
             ParaViewDataCollection pvdc("LoadedData", fem.mesh);
             pvdc.RegisterField("loaded_u", &tlf.current.u);
-            pvdc.RegisterField("loaded_v", &tlf.current.v);
-            pvdc.RegisterField("loaded_a", &tlf.current.a);
-            pvdc.RegisterField("loaded_c", &tlf.current.c);
-            pvdc.RegisterField("loaded_psi", &tlf.current.psi);
+            pvdc.RegisterField("loaded_p", &tlf.current.p);
             pvdc.SetCycle(meta_out.step);
             pvdc.SetTime(meta_out.t);
             pvdc.Save();
             ParaViewDataCollection pvdc_q("LoadedData_q", fem.mesh);
-            pvdc_q.RegisterQField("loaded_Hq", &tlf.current.Hq);
-            pvdc_q.RegisterQField("loaded_ePlus_q", &tlf.current.ePlus_q);
-            pvdc_q.RegisterQField("loaded_c_q", &tlf.current.c_q);
             pvdc_q.SetCycle(meta_out.step);
             pvdc_q.SetTime(meta_out.t);
             pvdc_q.Save();

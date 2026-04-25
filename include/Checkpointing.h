@@ -13,7 +13,7 @@
 
 using namespace mfem;
 
-namespace fracture {
+namespace nse {
     class InputData;
     class FEMachinery;
     class TimeLevelFields;

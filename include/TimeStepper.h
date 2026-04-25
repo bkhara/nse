@@ -14,7 +14,7 @@
 using namespace mfem;
 using std::endl;
 
-namespace fracture {
+namespace nse {
     class TimeStepper {
         int myrank;
         InputData &idata;
@@ -88,10 +88,6 @@ namespace fracture {
                 idata.run_ctx.time_step = n;
                 idata.run_ctx.time = t;
 
-                // reset psi if enabled
-                if (idata.experimental.reset_psi_at_time_step()) {
-                    tlf.ReInitializePGLatentVariable();
-                }
 
                 // staggered iteration (or alternating solve iteration)
                 double energy_curr = 0;
@@ -131,11 +127,11 @@ namespace fracture {
                     restart_meta.step = n;
                     restart_meta.t = t;
                     restart_meta.dt = dt;
-                    fracture::Checkpointing::WriteCheckpoint(idata, fem, tlf, restart_meta, fem.mesh->GetComm());
+                    nse::Checkpointing::WriteCheckpoint(idata, fem, tlf, restart_meta, fem.mesh->GetComm());
                 }
                 if (idata.streaming_inputs.if_stream) {
-                    fracture::StreamingInputs si = idata.streaming_inputs;
-                    StreamReopen(*(fem.mesh), tlf.current.c, n, si.frequency, vis);
+                    nse::StreamingInputs si = idata.streaming_inputs;
+                    StreamReopen(*(fem.mesh), tlf.current.p, n, si.frequency, vis);
                 }
 
                 // print final info
@@ -154,7 +150,7 @@ namespace fracture {
         // but here we do case-by-case initialization, if it exists
         void SetInitialConditions() {
             if (idata.checkpointing_inputs.restart_from_chkpt) {
-                fracture::Checkpointing::ReadCheckpointData(idata, fem, tlf, restart_meta, fem.mesh->GetComm());
+                nse::Checkpointing::ReadCheckpointData(idata, fem, tlf, restart_meta, fem.mesh->GetComm());
                 if (!Mpi::WorldRank()) {
                     std::cout << "Reading from checkpoint file successful!\n";
                 }
@@ -162,8 +158,6 @@ namespace fracture {
             else {
                 // pcase->SetElasticityIC(tlf.current);
             }
-            tlf.UpdatePGIterates();
-            tlf.UpdateStaggeredIterates();
             tlf.UpdateTimeStepIterates();
         }
 

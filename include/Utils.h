@@ -8,7 +8,7 @@
 
 using namespace mfem;
 
-namespace fracture {
+namespace nse {
     struct CombinedGridFunctions {
         ParGridFunction &u;
         ParGridFunction &c;
@@ -439,7 +439,7 @@ namespace fracture {
 
 #ifdef MFEM_USE_PETSC
 #include <petscmat.h>
-namespace fracture {
+namespace nse {
     static void CheckSymmetryByDotTests(const HypreParMatrix &A,
                                     MPI_Comm comm,
                                     int ntests = 3,

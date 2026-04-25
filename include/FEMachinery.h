@@ -8,7 +8,7 @@
 
 using namespace mfem;
 
-namespace fracture {
+namespace nse {
     class FEMachinery {
     public:
         InputData &idata;

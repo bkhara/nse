@@ -8,7 +8,7 @@
 
 using namespace mfem;
 
-namespace fracture {
+namespace nse {
     class TimeLevelFields;
     class ProblemCase {
     protected:
@@ -60,32 +60,32 @@ namespace fracture {
          * The derived class needs to have an analytical solution member function
          * @param fgf
          */
-        virtual void SetAnalyticalSolution(FractureGridFields& fgf) {}
+        virtual void SetAnalyticalSolution(NSEGridFields& fgf) {}
 
         /** Project the initial conditions onto this specified gridfield
          *
          * @param fgf
          */
-        virtual void SetElasticityIC(FractureGridFields& fgf) {}
+        virtual void SetElasticityIC(NSEGridFields& fgf) {}
 
         /** Project the initial conditions onto this specified gridfield (for c and psi)
          *
          * @param fgf
          */
-        virtual void SetPhaseFieldIC(FractureGridFields& fgf) {}
+        virtual void SetPhaseFieldIC(NSEGridFields& fgf) {}
 
         /** Project the Dirichlet BCs onto
          * the given gridfields. The particular gridfunction where the BCs
          * will be filled might differ from case to case
          * @param fgf
          */
-        virtual void ApplyElasticityBC(FractureGridFields &fgf) {}
+        virtual void ApplyElasticityBC(NSEGridFields &fgf) {}
 
         /** Project the Dirichlet BCs onto
          * the given gridfields.
          * @param fgf
          */
-        virtual void ApplyPhaseFieldBC(FractureGridFields &fgf) {}
+        virtual void ApplyPhaseFieldBC(NSEGridFields &fgf) {}
 
         /** Add the integrators for solving for the first step acceleration.
          * @param a bilinear form (lhs)

@@ -8,36 +8,29 @@
 
 using namespace mfem;
 
-namespace fracture {
-    struct FractureGridFields {
+namespace nse {
+    struct NSEGridFields {
         ParGridFunction u;
-        ParGridFunction v;
-        ParGridFunction a;
-        ParGridFunction c;
         ParGridFunction p;
-        ParGridFunction psi;
-        ParGridFunction lambda;
         QuadratureFunction Hq;
-        QuadratureFunction ePlus_q;
-        QuadratureFunction c_q;
 
-        explicit FractureGridFields(const FEMachinery &fem);
+        explicit NSEGridFields(const FEMachinery &fem);
 
         // In-place addition
-        FractureGridFields& operator+=(const FractureGridFields& rhs);
+        NSEGridFields& operator+=(const NSEGridFields& rhs);
 
         // In-place subtraction
-        FractureGridFields& operator-=(const FractureGridFields& rhs);
+        NSEGridFields& operator-=(const NSEGridFields& rhs);
 
         // Out-of-place addition
-        friend FractureGridFields operator+(FractureGridFields lhs,
-                                            const FractureGridFields& rhs);
+        friend NSEGridFields operator+(NSEGridFields lhs,
+                                            const NSEGridFields& rhs);
 
         // Out-of-place subtraction
-        friend FractureGridFields operator-(FractureGridFields lhs,
-                                            const FractureGridFields& rhs);
+        friend NSEGridFields operator-(NSEGridFields lhs,
+                                            const NSEGridFields& rhs);
 
-        void CopyFrom(const FractureGridFields &src);
+        void CopyFrom(const NSEGridFields &src);
     };
 
     class TimeLevelFields {
@@ -46,23 +39,11 @@ namespace fracture {
 
     public:
         FEMachinery &femach;
-        FractureGridFields current;
-        FractureGridFields prev_1;
-        FractureGridFields prev_2;
-        FractureGridFields prev_stag;
-        FractureGridFields prev_pg;
-        FractureGridFields exact;
-        FractureGridFields error;
-        ParGridFunction dc_minus; // the magnitude
-        ParGridFunction dc_minus_cmltv;
-        ParGridFunction c_violation;
-        ParGridFunction residual_u;
-        ParGridFunction residual_c;
-        ParGridFunction energy_p;
-        ParGridFunction energy_m;
-        ParGridFunction stress_p;
-        ParGridFunction stress_m;
-        ParGridFunction Hplus;
+        NSEGridFields current;
+        NSEGridFields prev_1;
+        NSEGridFields prev_2;
+        NSEGridFields exact;
+        NSEGridFields error;
 
         const double PSI_MIN_CLAMP = -36.0;
         const double PSI_MAX_CLAMP =  36.0;
@@ -71,21 +52,9 @@ namespace fracture {
 
         void Initialize();
 
-        void UpdateStaggeredIterates();
-
-        void RollBackFromStaggeredIterates();
-
-        void UpdatePGIterates();
-
-        void RollBackFromPGIterates();
-
         void UpdateTimeStepIterates();
 
         void RollBackFromTimeStepIterates();
-
-        void ReInitializePGLatentVariable();
-
-        void ResetPGLatentVariableByClamping();
 
         void SetTime(const double t);
 

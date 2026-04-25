@@ -6,7 +6,7 @@
 #include "ProblemCase.h"
 #include "Integrators.h"
 
-namespace fracture {
+namespace nse {
     class TimeLevelFields;
 
     class MMS2DStokesExactVelocity : public VectorCoefficient {
@@ -261,17 +261,17 @@ namespace fracture {
             forcing_rhs->SetTime(t);
         }
 
-        void SetElasticityIC(FractureGridFields& fgf) override {
+        void SetElasticityIC(NSEGridFields& fgf) override {
             exact_velocity.SetTime(0.);
             fgf.u.ProjectCoefficient(exact_velocity);
         }
 
-        void ApplyElasticityBC(FractureGridFields &fgf) override {
+        void ApplyElasticityBC(NSEGridFields &fgf) override {
             fgf.u.ProjectBdrCoefficient(exact_velocity, bdr_attr_u);
             // fgf.p.ProjectBdrCoefficient(exact_pressure, bdr_attr_p);
         }
 
-        void SetAnalyticalSolution(FractureGridFields& fgf) override {
+        void SetAnalyticalSolution(NSEGridFields& fgf) override {
             fgf.u.ProjectCoefficient(exact_velocity);
             fgf.p.ProjectCoefficient(exact_pressure);
         }

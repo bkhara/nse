@@ -10,39 +10,9 @@
 #include "Utils.h"
 
 using namespace mfem;
-using namespace fracture;
+using namespace nse;
 
-namespace fracture {
-    // this is a struct for holding various values (at a Gauss point)
-    // that will be used for calculating the integrands
-    // Furthermore, these values are at one time-level
-    struct FracGPValues {
-        int nsd;
-        int el_vdim;
-
-        Vector u;
-        Vector v;
-        Vector a;
-        double c = 0.;
-        double psi = 0.;
-        double lambda = 0.;
-
-        DenseMatrix du;
-        DenseMatrix dv;
-        DenseMatrix da;
-        Vector dc;
-        Vector dpsi;
-
-        double e_density = 0.0;
-
-        FracGPValues(int el_vdim, int nsd)
-            : nsd(nsd), el_vdim(el_vdim),
-              u(el_vdim), v(el_vdim), a(el_vdim),
-              du(el_vdim, nsd), dv(el_vdim, nsd), da(el_vdim, nsd),
-              dc(nsd), dpsi(nsd) {
-        }
-    };
-
+namespace nse {
     class NSEIntegratorBase : public mfem::BlockNonlinearFormIntegrator {
     protected:
         const InputData &idata;

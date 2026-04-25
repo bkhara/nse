@@ -13,7 +13,7 @@
 
 using namespace mfem;
 
-namespace fracture {
+namespace nse {
     class NSEBlockOperator : public mfem::Operator {
     public:
         InputData &idata;
@@ -165,7 +165,7 @@ namespace fracture {
 
             nse_block_op = new NSEBlockOperator(fem.fespace_primal_u->GetTrueVSize() + fem.fespace_p->GetTrueVSize(),idata, fem, tlf, pcase);
             petsc_nonlinear_solver = new PetscNonlinearSolver(fem.fespace_primal_u->GetComm(), *nse_block_op,
-                                                                  std::string(fracture::PetscSolverPrefix::ELASTICITY));
+                                                                  std::string(nse::PetscSolverPrefix::ELASTICITY));
             petsc_nonlinear_solver->iterative_mode = true;
             snes = static_cast<petsc::SNES>(*petsc_nonlinear_solver);
         }

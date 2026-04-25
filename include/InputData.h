@@ -13,7 +13,7 @@
 using mycustom::ConfigReader;
 using mylib::InputReader;
 
-namespace fracture {
+namespace nse {
     enum ProblemCaseId : unsigned int {
         APS_2D = 0,
         APS_3D = 1,

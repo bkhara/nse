@@ -44,12 +44,12 @@ int main(int argc, char *argv[]) {
     MFEMInitializePetsc(&argc, &argv, petscrc_file, nullptr);
 
     {
-        fracture::ParallelTimer t_solve(MPI_COMM_WORLD, "solve");
-        fracture::ParallelTimer t_total(MPI_COMM_WORLD, "total");
+        nse::ParallelTimer t_solve(MPI_COMM_WORLD, "solve");
+        nse::ParallelTimer t_total(MPI_COMM_WORLD, "total");
 
         t_total.Start();
         {
-            fracture::InputData idata;
+            nse::InputData idata;
             idata.ReadFromFile(config_file, petscrc_file);
 
             FEMachinery fem(idata);

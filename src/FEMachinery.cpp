@@ -6,7 +6,7 @@
 
 #include "Checkpointing.h"
 
-namespace fracture {
+namespace nse {
     FEMachinery::FEMachinery(InputData &idata): idata(idata), el_vdim(idata.el_vdim), fespace_block_cpsi(2), fespace_block_up(2) {
         SetUpMesh();
         if (mesh->Dimension() > 2) {

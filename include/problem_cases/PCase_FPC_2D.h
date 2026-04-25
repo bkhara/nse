@@ -7,7 +7,7 @@
 #include "ProblemCase.h"
 #include "Utils.h"
 
-namespace fracture {
+namespace nse {
     struct DragLift {
         double drag = 0.0;
         double lift = 0.0;
@@ -92,7 +92,7 @@ namespace fracture {
             outlet_marker[OUTLET - 1] = 1;
         }
 
-        void ApplyElasticityBC(FractureGridFields& fgf) override {
+        void ApplyElasticityBC(NSEGridFields& fgf) override {
             Array<int> bdr_attr;
             bdr_attr.SetSize(fem.mesh->bdr_attributes.Max());
 
@@ -172,10 +172,10 @@ namespace fracture {
             ProblemCase::SetTime(t);
         }
 
-        void SetElasticityIC(FractureGridFields& fgf) override {
+        void SetElasticityIC(NSEGridFields& fgf) override {
         }
 
-        void SetPhaseFieldIC(FractureGridFields& fgf) override {
+        void SetPhaseFieldIC(NSEGridFields& fgf) override {
         }
 
         void AddElasticityRHSIntegrators(ParLinearForm &b) override {

@@ -9,7 +9,7 @@
 #include <iostream>
 #include <iomanip>
 
-namespace fracture {
+namespace nse {
     class ParallelTimer {
     private:
         MPI_Comm comm_;
