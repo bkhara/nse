@@ -53,16 +53,6 @@ namespace fracture {
         const int vdim;
         const mfem::Ordering::Type ordering;
 
-        static inline int VDofIndex(const int dof,
-                                    const int vdim,
-                                    const int a,
-                                    const int comp,
-                                    const mfem::Ordering::Type ordering) {
-            return (ordering == mfem::Ordering::byNODES)
-                       ? a * vdim + comp
-                       : comp * dof + a;
-        }
-
         static void EvalVectorAtIP(const mfem::Vector &elfun,
                                    const int dof,
                                    const int vdim,

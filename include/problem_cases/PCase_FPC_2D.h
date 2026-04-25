@@ -5,8 +5,14 @@
 #pragma once
 
 #include "ProblemCase.h"
+#include "Utils.h"
 
 namespace fracture {
+    struct DragLift {
+        double drag = 0.0;
+        double lift = 0.0;
+    };
+
     class PCase_FPC_2D : public ProblemCase {
 
         enum {
@@ -16,6 +22,8 @@ namespace fracture {
             TOP_WALL = 4,
             CYLINDER = 7,
         };
+
+        std::string forcefilename = "forces.txt";
 
         public:
         PCase_FPC_2D(InputData& idata, FEMachinery& fem, TimeLevelFields& tlf)
@@ -31,6 +39,12 @@ namespace fracture {
                     mfem::out << "kappa_min = " << kappa_min << ", kappa_max = " << kappa_max << "\n";
                     mfem::out << "Current dt=" << dt << "\n";
                 }
+            }
+
+            if (Mpi::Root()) {
+                std::ofstream file(forcefilename.c_str());
+                file << "t,Cd,Cl\n";
+                file.close();
             }
         }
 
@@ -166,12 +180,187 @@ namespace fracture {
         }
 
         void PostStep(const double t, const double dt) override {
+            mfem::Array<int> cylinder_marker(fem.mesh->bdr_attributes.Max());
+            cylinder_marker = 0;
+            cylinder_marker[CYLINDER - 1] = 1;
+
+            DragLift dl = ComputeDragLiftOnBoundary(cylinder_marker,
+                                                    2,
+                                                    fem.ordering,
+                                                    -1,
+                                                    false);
+            if (Mpi::Root()) {
+                std::ofstream file(forcefilename.c_str(), std::ios_base::app);
+                file << t << "," << dl.drag << "," << dl.lift << "\n";
+                file.close();
+            }
         }
 
         void UpdateQuadratureFunctions() override {
         }
 
         void RegisterParaviewFields(ParaViewDataCollection& pvdc, ParaViewDataCollection& pvdc_q) override {
+        }
+
+        DragLift ComputeDragLiftOnBoundary(const mfem::Array<int>& bdr_marker,
+                                           const int vdim,
+                                           const mfem::Ordering::Type ordering,
+                                           const int quad_order = -1,
+                                           const bool flip_sign = false) {
+            MFEM_VERIFY(vdim == 2, "This drag/lift helper is written for 2D.");
+
+            mfem::ParMesh &pmesh = *fem.mesh;
+            const mfem::ParFiniteElementSpace* ufes = fem.fespace_primal_u;
+            const mfem::ParFiniteElementSpace* pfes = fem.fespace_p;
+
+            MFEM_VERIFY(ufes != nullptr, "u_gf must have a valid ParFiniteElementSpace.");
+            MFEM_VERIFY(pfes != nullptr, "p_gf must have a valid ParFiniteElementSpace.");
+
+            double local_force[2] = {0.0, 0.0};
+
+            mfem::Array<int> vdofs_u;
+            mfem::Array<int> dofs_p;
+
+            mfem::Vector u_el;
+            mfem::Vector p_el;
+
+            mfem::Vector Nu;
+            mfem::Vector Np;
+
+            mfem::DenseMatrix dNu;
+            mfem::DenseMatrix grad_u(vdim, vdim);
+
+            mfem::Vector nor(vdim);
+            mfem::Vector traction(vdim);
+
+            const double nu = idata.flow_properties.nu;
+
+            for (int be = 0; be < pmesh.GetNBE(); be++) {
+                const int attr = pmesh.GetBdrAttribute(be);
+
+                if (attr <= 0 || attr > bdr_marker.Size()) {
+                    continue;
+                }
+
+                if (bdr_marker[attr - 1] == 0) {
+                    continue;
+                }
+
+                mfem::FaceElementTransformations* Tr =
+                    pmesh.GetBdrFaceTransformations(be);
+
+                MFEM_VERIFY(Tr != nullptr, "Null boundary FaceElementTransformations.");
+                MFEM_VERIFY(Tr->Elem1 != nullptr, "Null Elem1 transformation.");
+                MFEM_VERIFY(Tr->Face != nullptr, "Null Face transformation.");
+
+                const int elem = Tr->Elem1No;
+
+                const mfem::FiniteElement* el_u = ufes->GetFE(elem);
+                const mfem::FiniteElement* el_p = pfes->GetFE(elem);
+
+                const int dof_u = el_u->GetDof();
+                const int dof_p = el_p->GetDof();
+                const int dim = Tr->Elem1->GetSpaceDim();
+
+                MFEM_VERIFY(dim == 2, "This drag/lift helper is written for 2D.");
+                MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+                ufes->GetElementVDofs(elem, vdofs_u);
+                pfes->GetElementDofs(elem, dofs_p);
+
+                tlf.current.u.GetSubVector(vdofs_u, u_el);
+                tlf.current.p.GetSubVector(dofs_p, p_el);
+
+                Nu.SetSize(dof_u);
+                Np.SetSize(dof_p);
+                dNu.SetSize(dof_u, dim);
+
+                const int order =
+                    (quad_order > 0)
+                        ? quad_order
+                        : 2 * std::max(el_u->GetOrder(), el_p->GetOrder());
+
+                const mfem::IntegrationRule& ir =
+                    mfem::IntRules.Get(Tr->GetGeometryType(), order);
+
+                for (int iq = 0; iq < ir.GetNPoints(); iq++) {
+                    const mfem::IntegrationPoint& ip_face = ir.IntPoint(iq);
+
+                    Tr->Face->SetIntPoint(&ip_face);
+
+                    mfem::IntegrationPoint ip_el;
+                    Tr->Loc1.Transform(ip_face, ip_el);
+                    Tr->Elem1->SetIntPoint(&ip_el);
+
+                    el_u->CalcShape(ip_el, Nu);
+                    el_u->CalcPhysDShape(*Tr->Elem1, dNu);
+                    el_p->CalcShape(ip_el, Np);
+
+                    double p = 0.0;
+                    for (int a = 0; a < dof_p; a++) {
+                        p += p_el(a) * Np(a);
+                    }
+
+                    grad_u = 0.0;
+
+                    for (int a = 0; a < dof_u; a++) {
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+                            const double ua_c = u_el(ia);
+
+                            for (int j = 0; j < dim; j++) {
+                                grad_u(c, j) += ua_c * dNu(a, j);
+                            }
+                        }
+                    }
+
+                    // Scaled outward normal:
+                    //
+                    //     nor = n |J_face|
+                    //
+                    // Therefore ds is already contained in nor.
+                    // Only multiply by the quadrature weight.
+                    mfem::CalcOrtho(Tr->Face->Jacobian(), nor);
+
+                    traction = 0.0;
+
+                    // traction = sigma n
+                    //
+                    // sigma = -p I + nu (grad u + grad u^T)
+                    //
+                    // Because nor is scaled, this is really sigma * nor.
+                    for (int i = 0; i < dim; i++) {
+                        traction(i) += -p * nor(i);
+
+                        for (int j = 0; j < dim; j++) {
+                            traction(i) +=
+                                nu * (grad_u(i, j) + grad_u(j, i)) * nor(j);
+                        }
+                    }
+
+                    const double w = ip_face.weight;
+
+                    local_force[0] += traction(0) * w;
+                    local_force[1] += traction(1) * w;
+                }
+            }
+
+            double global_force[2] = {0.0, 0.0};
+
+            MPI_Allreduce(local_force, global_force, 2, MPI_DOUBLE, MPI_SUM,
+                          pmesh.GetComm());
+
+            DragLift dl;
+
+            dl.drag = global_force[0];
+            dl.lift = global_force[1];
+
+            if (flip_sign) {
+                dl.drag *= -1.0;
+                dl.lift *= -1.0;
+            }
+
+            return dl;
         }
     };
 

@@ -22,6 +22,16 @@ namespace fracture {
         }
     };
 
+    static inline int VDofIndex(const int dof,
+                                    const int vdim,
+                                    const int a,
+                                    const int comp,
+                                    const mfem::Ordering::Type ordering) {
+        return (ordering == mfem::Ordering::byNODES)
+                   ? a * vdim + comp
+                   : comp * dof + a;
+    }
+
     struct StaggeredIterationError {
         real_t l2 = 0.0; // ||dc||_L2
         real_t linfty = 0.0; // ||dc||_inf
