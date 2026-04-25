@@ -630,9 +630,11 @@ namespace fracture {
     struct FlowPropertiesInputs {
         double Re = 1.0;
         double nu = 1.0;
+        bool disable_convection = false;
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading FlowProperties\n"; }
             reader.ReadValue("Re", Re);
+            reader.ReadValue("disable_convection", disable_convection);
             nu = 1. / Re;
         }
     };
@@ -731,7 +733,7 @@ namespace fracture {
         int el_vdim = 1;
 
         ProblemCaseConfig pcase_config;
-        FlowPropertiesInputs flow_properties_inputs;
+        FlowPropertiesInputs flow_properties;
 
         CheckpointingInputs checkpointing_inputs;
         StreamingInputs streaming_inputs;
@@ -761,7 +763,7 @@ namespace fracture {
             mesh_config.ReadFromFile(reader);
             time_marching.ReadFromFile(reader);
             pcase_config.ReadFromFile(reader);
-            flow_properties_inputs.ReadFromFile(reader);
+            flow_properties.ReadFromFile(reader);
         }
     };
 }

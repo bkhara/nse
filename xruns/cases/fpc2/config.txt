@@ -2,6 +2,7 @@
 pcase = 302;
 
 Re = 1.0;
+disable_convection = false;
 
 checkpointing_inputs = {
     # in

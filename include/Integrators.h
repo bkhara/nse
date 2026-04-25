@@ -43,7 +43,7 @@ namespace fracture {
         }
     };
 
-    class StokesIntegratorBase : public mfem::BlockNonlinearFormIntegrator {
+    class NSEIntegratorBase : public mfem::BlockNonlinearFormIntegrator {
     protected:
         const InputData &idata;
         const TimeLevelFields &tlf;
@@ -125,7 +125,7 @@ namespace fracture {
         // }
 
     public:
-        StokesIntegratorBase(const InputData &idata,
+        NSEIntegratorBase(const InputData &idata,
                              const TimeLevelFields &tlf,
                              const int vdim,
                              const mfem::Ordering::Type ordering,
@@ -138,22 +138,22 @@ namespace fracture {
         }
     };
 
-    class StokesBlockIntegBDF2 : public StokesIntegratorBase {
+    class NSEBlockIntegBDF2 : public NSEIntegratorBase {
     public:
-        StokesBlockIntegBDF2(const InputData &idata,
-                             const TimeLevelFields &tlf,
+        NSEBlockIntegBDF2(const InputData& idata,
+                             const TimeLevelFields& tlf,
                              const int vdim,
                              const mfem::Ordering::Type ordering,
-                             mfem::VectorCoefficient *f_coeff = nullptr)
-            : StokesIntegratorBase(idata, tlf, vdim, ordering, f_coeff) {
+                             mfem::VectorCoefficient* f_coeff = nullptr)
+            : NSEIntegratorBase(idata, tlf, vdim, ordering, f_coeff) {
         }
 
-        void AssembleElementVector(const mfem::Array<const mfem::FiniteElement *> &el,
-                                   mfem::ElementTransformation &T,
-                                   const mfem::Array<const mfem::Vector *> &elfun,
-                                   const mfem::Array<mfem::Vector *> &elvec) override {
-            const mfem::FiniteElement &el_u = *el[0];
-            const mfem::FiniteElement &el_p = *el[1];
+        void AssembleElementVector(const mfem::Array<const mfem::FiniteElement*>& el,
+                                   mfem::ElementTransformation& T,
+                                   const mfem::Array<const mfem::Vector*>& elfun,
+                                   const mfem::Array<mfem::Vector*>& elvec) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
 
             const int dof_u = el_u.GetDof();
             const int dof_p = el_p.GetDof();
@@ -167,8 +167,8 @@ namespace fracture {
             elvec[1]->SetSize(dof_p);
             *elvec[1] = 0.0;
 
-            const mfem::Vector &eu = *elfun[0];
-            const mfem::Vector &ep = *elfun[1];
+            const mfem::Vector& eu = *elfun[0];
+            const mfem::Vector& ep = *elfun[1];
 
             mfem::Vector Nu(dof_u), Np(dof_p);
             mfem::DenseMatrix dNu(dof_u, dim);
@@ -177,15 +177,15 @@ namespace fracture {
             mfem::DenseMatrix grad_u_np1(vdim, dim);
 
             const int e = T.ElementNo;
-            const mfem::IntegrationRule *ir = &tlf.femach.qspace->GetIntRule(e);
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
 
             const double ctime = tlf.GetTime(); // t_{n+1}
             const double dt = tlf.GetTimeStep();
 
-            const double nu = idata.flow_properties_inputs.nu;
+            const double nu = idata.flow_properties.nu;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
-                const mfem::IntegrationPoint &ip = ir->IntPoint(iq);
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
                 T.SetIntPoint(&ip);
 
                 el_u.CalcShape(ip, Nu);
@@ -194,16 +194,14 @@ namespace fracture {
 
                 const double wdet = ip.weight * T.Weight();
 
-                // current solution values at quadrature point
                 EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u_np1);
                 EvalVectorGradAtIP(eu, dof_u, vdim, ordering, dNu, grad_u_np1);
+
                 const double p_np1 = EvalScalarAtIP(ep, Np);
 
-                // previous time levels
                 tlf.prev_1.u.GetVectorValue(T, ip, u_n);
                 tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
 
-                // forcing at current time
                 f_np1.SetSize(vdim);
                 f_np1 = 0.0;
                 if (f_coeff) {
@@ -211,7 +209,6 @@ namespace fracture {
                     f_coeff->Eval(f_np1, T, ip);
                 }
 
-                // div(u^{n+1})
                 double div_u_np1 = 0.0;
                 for (int c = 0; c < vdim; c++) {
                     div_u_np1 += grad_u_np1(c, c);
@@ -220,35 +217,68 @@ namespace fracture {
                 // ------------------------------------------------------------
                 // Momentum residual block
                 //
-                // rho*(3 u^{n+1} - 4 u^n + u^{n-1})/(2dt)
-                // - mu*Delta u^{n+1} + grad p^{n+1} - f^{n+1} = 0
+                // Conservative/divergence-form NSE:
+                //
+                // (3u^{n+1} - 4u^n + u^{n-1})/(2dt)
+                // + div(u^{n+1} \otimes u^{n+1})
+                // - nu Delta u^{n+1}
+                // + grad p^{n+1}
+                // - f^{n+1} = 0
                 //
                 // Weak form:
-                // (rho*3/(2dt) u^{n+1}, v)
-                // - (rho*(4u^n-u^{n-1})/(2dt), v)
-                // + (mu grad u^{n+1}, grad v)
+                //
+                // (3/(2dt) u^{n+1}, v)
+                // - ((4u^n - u^{n-1})/(2dt), v)
+                // - (u^{n+1} \otimes u^{n+1}, grad v)
+                // + nu (grad u^{n+1}, grad v)
                 // - (p^{n+1}, div v)
                 // - (f^{n+1}, v)
+                //
+                // Boundary flux from convection is not included here:
+                //
+                // + <(u \otimes u)n, v>_{\partial\Omega}
+                //
+                // This term vanishes on strongly imposed no-slip/inflow Dirichlet
+                // boundaries since the test function is zero there. For open/outflow
+                // boundaries, add a separate boundary integrator if needed.
                 // ------------------------------------------------------------
                 for (int a = 0; a < dof_u; a++) {
                     for (int c = 0; c < vdim; c++) {
                         const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
 
                         // BDF2 mass contribution from u^{n+1}
-                        (*elvec[0])(ia) += (3.0 / (2.0 * dt)) * u_np1(c) * Nu(a) * wdet;
+                        (*elvec[0])(ia) +=
+                            (3.0 / (2.0 * dt)) * u_np1(c) * Nu(a) * wdet;
 
                         // BDF2 history contribution
-                        (*elvec[0])(ia) += -(4.0 * u_n(c) - u_nm1(c)) / (2.0 * dt) * Nu(a) * wdet;
+                        (*elvec[0])(ia) +=
+                            -(4.0 * u_n(c) - u_nm1(c)) / (2.0 * dt) * Nu(a) * wdet;
 
-                        // diffusion contribution
-                        for (int j = 0; j < dim; j++) {
-                            (*elvec[0])(ia) += nu * grad_u_np1(c, j) * dNu(a, j) * wdet;
+                        // Conservative convection contribution:
+                        //
+                        // - (u \otimes u, grad v)
+                        //
+                        // Component form:
+                        //
+                        // - sum_j u_c u_j d_j v_c
+                        //
+                        if (not idata.flow_properties.disable_convection) {
+                            for (int j = 0; j < dim; j++) {
+                                (*elvec[0])(ia) +=
+                                    -u_np1(c) * u_np1(j) * dNu(a, j) * wdet;
+                            }
                         }
 
-                        // pressure contribution
+                        // Diffusion contribution
+                        for (int j = 0; j < dim; j++) {
+                            (*elvec[0])(ia) +=
+                                nu * grad_u_np1(c, j) * dNu(a, j) * wdet;
+                        }
+
+                        // Pressure contribution
                         (*elvec[0])(ia) += -p_np1 * dNu(a, c) * wdet;
 
-                        // forcing contribution
+                        // Forcing contribution
                         (*elvec[0])(ia) += -f_np1(c) * Nu(a) * wdet;
                     }
                 }
@@ -264,12 +294,12 @@ namespace fracture {
             }
         }
 
-        void AssembleElementGrad(const mfem::Array<const mfem::FiniteElement *> &el,
-                                 mfem::ElementTransformation &T,
-                                 const mfem::Array<const mfem::Vector *> &elfun,
-                                 const mfem::Array2D<mfem::DenseMatrix *> &elmat) override {
-            const mfem::FiniteElement &el_u = *el[0];
-            const mfem::FiniteElement &el_p = *el[1];
+        void AssembleElementGrad(const mfem::Array<const mfem::FiniteElement*>& el,
+                                 mfem::ElementTransformation& T,
+                                 const mfem::Array<const mfem::Vector*>& elfun,
+                                 const mfem::Array2D<mfem::DenseMatrix*>& elmat) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
 
             const int dof_u = el_u.GetDof();
             const int dof_p = el_p.GetDof();
@@ -289,22 +319,26 @@ namespace fracture {
             elmat(1, 1)->SetSize(dof_p, dof_p);
             *elmat(1, 1) = 0.0;
 
-            mfem::DenseMatrix &Auu = *elmat(0, 0);
-            mfem::DenseMatrix &Aup = *elmat(0, 1);
-            mfem::DenseMatrix &Apu = *elmat(1, 0);
+            mfem::DenseMatrix& Auu = *elmat(0, 0);
+            mfem::DenseMatrix& Aup = *elmat(0, 1);
+            mfem::DenseMatrix& Apu = *elmat(1, 0);
+
+            const mfem::Vector& eu = *elfun[0];
 
             mfem::Vector Nu(dof_u), Np(dof_p);
             mfem::DenseMatrix dNu(dof_u, dim);
 
+            mfem::Vector u_np1(vdim);
+            mfem::DenseMatrix grad_u_np1(vdim, dim);
+
             const int e = T.ElementNo;
-            const mfem::IntegrationRule *ir = &tlf.femach.qspace->GetIntRule(e);
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
 
             const double dt = tlf.GetTimeStep();
-
-            const double nu = idata.flow_properties_inputs.nu;
+            const double nu = idata.flow_properties.nu;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
-                const mfem::IntegrationPoint &ip = ir->IntPoint(iq);
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
                 T.SetIntPoint(&ip);
 
                 el_u.CalcShape(ip, Nu);
@@ -313,27 +347,101 @@ namespace fracture {
 
                 const double wdet = ip.weight * T.Weight();
 
+                EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u_np1);
+                EvalVectorGradAtIP(eu, dof_u, vdim, ordering, dNu, grad_u_np1);
+
                 // ------------------------------------------------------------
                 // Auu block
                 //
+                // Linear contribution:
+                //
                 // d/du [
-                //   rho*3/(2dt) (u, v) + mu (grad u, grad v)
+                //   3/(2dt) (u, v) + nu (grad u, grad v)
                 // ]
+                //
+                // Conservative convection contribution:
+                //
+                // C(u; v) = - (u \otimes u, grad v)
+                //
+                // Newton derivative:
+                //
+                // dC(u)[du; v]
+                // =
+                // - (du \otimes u, grad v)
+                // - (u \otimes du, grad v)
+                //
+                // Component form:
+                //
+                // C_c = - sum_j u_c u_j d_j v_c
+                //
+                // dC_c / d(du_k)
+                // =
+                // - delta_{ck} du_k sum_j u_j d_j v_c
+                // - u_c du_k d_k v_c
                 // ------------------------------------------------------------
                 for (int a = 0; a < dof_u; a++) {
                     for (int b = 0; b < dof_u; b++) {
                         const double mass_ab =
-                                (3.0 / (2.0 * dt)) * Nu(a) * Nu(b) * wdet;
+                            (3.0 / (2.0 * dt)) * Nu(a) * Nu(b) * wdet;
 
                         double diff_ab = 0.0;
                         for (int j = 0; j < dim; j++) {
                             diff_ab += nu * dNu(a, j) * dNu(b, j) * wdet;
                         }
 
+                        // Mass + diffusion: diagonal in velocity components
                         for (int c = 0; c < vdim; c++) {
                             const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
                             const int ib = VDofIndex(dof_u, vdim, b, c, ordering);
+
                             Auu(ia, ib) += mass_ab + diff_ab;
+                        }
+
+                        if (not idata.flow_properties.disable_convection) {
+                            // Compute u . grad(phi_a), where phi_a is the test shape.
+                            //
+                            // This appears in:
+                            //
+                            // - (du_c u_j, d_j v_c)
+                            //
+                            double u_dot_grad_Na = 0.0;
+                            for (int j = 0; j < dim; j++) {
+                                u_dot_grad_Na += u_np1(j) * dNu(a, j);
+                            }
+
+                            for (int c = 0; c < vdim; c++) {
+                                const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+
+                                for (int k = 0; k < vdim; k++) {
+                                    const int ib = VDofIndex(dof_u, vdim, b, k, ordering);
+
+                                    double conv_jac = 0.0;
+
+                                    // First variation:
+                                    //
+                                    // - (du \otimes u, grad v)
+                                    //
+                                    // Row component c, column component k:
+                                    //
+                                    // - delta_{ck} phi_b sum_j u_j d_j phi_a
+                                    //
+                                    if (c == k) {
+                                        conv_jac += -Nu(b) * u_dot_grad_Na;
+                                    }
+
+                                    // Second variation:
+                                    //
+                                    // - (u \otimes du, grad v)
+                                    //
+                                    // Row component c, column component k:
+                                    //
+                                    // - u_c phi_b d_k phi_a
+                                    //
+                                    conv_jac += -u_np1(c) * Nu(b) * dNu(a, k);
+
+                                    Auu(ia, ib) += conv_jac * wdet;
+                                }
+                            }
                         }
                     }
                 }
@@ -346,6 +454,7 @@ namespace fracture {
                 for (int a = 0; a < dof_u; a++) {
                     for (int c = 0; c < vdim; c++) {
                         const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+
                         for (int b = 0; b < dof_p; b++) {
                             Aup(ia, b) += -Np(b) * dNu(a, c) * wdet;
                         }
@@ -361,12 +470,212 @@ namespace fracture {
                     for (int b = 0; b < dof_u; b++) {
                         for (int c = 0; c < vdim; c++) {
                             const int ib = VDofIndex(dof_u, vdim, b, c, ordering);
+
                             Apu(a, ib) += Np(a) * dNu(b, c) * wdet;
                         }
                     }
                 }
 
-                // A11 block stays zero for standard unstabilized Stokes
+                // A11 block remains zero.
+            }
+        }
+    };
+
+    class NSEBlockIntegBDF2OutletConvectiveFlux : public NSEIntegratorBase {
+    public:
+        NSEBlockIntegBDF2OutletConvectiveFlux(const InputData& idata,
+                                                 const TimeLevelFields& tlf,
+                                                 const int vdim,
+                                                 const mfem::Ordering::Type ordering,
+                                                 mfem::VectorCoefficient* f_coeff = nullptr)
+            : NSEIntegratorBase(idata, tlf, vdim, ordering, f_coeff) {
+        }
+
+        void AssembleFaceVector(const mfem::Array<const mfem::FiniteElement*>& el1,
+                                const mfem::Array<const mfem::FiniteElement*>& el2,
+                                mfem::FaceElementTransformations& Tr,
+                                const mfem::Array<const mfem::Vector*>& elfun,
+                                const mfem::Array<mfem::Vector*>& elvec) override {
+            // Do not verify el2 here. This integrator is added through
+            // AddBdrFaceIntegrator(...), so MFEM already restricts it to
+            // boundary faces. In ParBlockNonlinearForm, el2 may still be
+            // structurally non-empty.
+
+            const mfem::FiniteElement& el_u = *el1[0];
+            const mfem::FiniteElement& el_p = *el1[1];
+
+            const int dof_u = el_u.GetDof();
+            const int dof_p = el_p.GetDof();
+            const int dim = Tr.Elem1->GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec[0]->SetSize(vdim * dof_u);
+            *elvec[0] = 0.0;
+
+            // Pressure residual gets no outlet convective-flux contribution,
+            // but it must still have the correct block size.
+            elvec[1]->SetSize(dof_p);
+            *elvec[1] = 0.0;
+
+            if (idata.flow_properties.disable_convection) {
+                return;
+            }
+
+            const mfem::Vector& eu = *elfun[0];
+
+            mfem::Vector Nu(dof_u);
+            mfem::Vector u(vdim);
+            mfem::Vector nor(dim);
+
+            const int order = 2 * el_u.GetOrder();
+            const mfem::IntegrationRule* ir =
+                &mfem::IntRules.Get(Tr.GetGeometryType(), order);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip_face = ir->IntPoint(iq);
+
+                Tr.Face->SetIntPoint(&ip_face);
+
+                // Map face integration point to element-1 integration point.
+                mfem::IntegrationPoint ip_el;
+                Tr.Loc1.Transform(ip_face, ip_el);
+                Tr.Elem1->SetIntPoint(&ip_el);
+
+                el_u.CalcShape(ip_el, Nu);
+
+                EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u);
+
+                // CalcOrtho gives the scaled physical normal:
+                //
+                //     nor = n |J_face|
+                //
+                // Therefore the surface measure is already contained in nor.
+                // Only multiply by the quadrature weight.
+                mfem::CalcOrtho(Tr.Face->Jacobian(), nor);
+
+                double u_dot_n = 0.0;
+                for (int j = 0; j < dim; j++) {
+                    u_dot_n += u(j) * nor(j);
+                }
+
+                const double w = ip_face.weight;
+
+                // Boundary flux:
+                //
+                // <(u \otimes u)n, v>
+                // =
+                // <u (u . n), v>
+                for (int a = 0; a < dof_u; a++) {
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+
+                        (*elvec[0])(ia) += Nu(a) * u(c) * u_dot_n * w;
+                    }
+                }
+            }
+        }
+
+        void AssembleFaceGrad(const mfem::Array<const mfem::FiniteElement*>& el1,
+                              const mfem::Array<const mfem::FiniteElement*>& el2,
+                              mfem::FaceElementTransformations& Tr,
+                              const mfem::Array<const mfem::Vector*>& elfun,
+                              const mfem::Array2D<mfem::DenseMatrix*>& elmat) override {
+            // Do not verify el2 here. This is called through AddBdrFaceIntegrator.
+
+            const mfem::FiniteElement& el_u = *el1[0];
+            const mfem::FiniteElement& el_p = *el1[1];
+
+            const int dof_u = el_u.GetDof();
+            const int dof_p = el_p.GetDof();
+            const int dim = Tr.Elem1->GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elmat(0, 0)->SetSize(vdim * dof_u, vdim * dof_u);
+            *elmat(0, 0) = 0.0;
+
+            // These blocks get no nonzero contribution from the outlet
+            // convective flux, but they must still be correctly sized.
+            elmat(0, 1)->SetSize(vdim * dof_u, dof_p);
+            *elmat(0, 1) = 0.0;
+
+            elmat(1, 0)->SetSize(dof_p, vdim * dof_u);
+            *elmat(1, 0) = 0.0;
+
+            elmat(1, 1)->SetSize(dof_p, dof_p);
+            *elmat(1, 1) = 0.0;
+
+            if (idata.flow_properties.disable_convection) {
+                return;
+            }
+
+            mfem::DenseMatrix& Auu = *elmat(0, 0);
+
+            const mfem::Vector& eu = *elfun[0];
+
+            mfem::Vector Nu(dof_u);
+            mfem::Vector u(vdim);
+            mfem::Vector nor(dim);
+
+            const int order = 2 * el_u.GetOrder();
+            const mfem::IntegrationRule* ir =
+                &mfem::IntRules.Get(Tr.GetGeometryType(), order);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip_face = ir->IntPoint(iq);
+
+                Tr.Face->SetIntPoint(&ip_face);
+
+                mfem::IntegrationPoint ip_el;
+                Tr.Loc1.Transform(ip_face, ip_el);
+                Tr.Elem1->SetIntPoint(&ip_el);
+
+                el_u.CalcShape(ip_el, Nu);
+
+                EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u);
+
+                mfem::CalcOrtho(Tr.Face->Jacobian(), nor);
+
+                double u_dot_n = 0.0;
+                for (int j = 0; j < dim; j++) {
+                    u_dot_n += u(j) * nor(j);
+                }
+
+                const double w = ip_face.weight;
+
+                // Residual:
+                //
+                // R_c = u_c (u . n)
+                //
+                // Jacobian:
+                //
+                // dR_c / du_k = delta_ck (u . n) + u_c n_k
+                //
+                // Since nor is already scaled by |J_face|, this is really:
+                //
+                // dR_c / du_k = delta_ck (u . nor) + u_c nor_k
+                for (int a = 0; a < dof_u; a++) {
+                    for (int b = 0; b < dof_u; b++) {
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(dof_u, vdim, b, k, ordering);
+
+                                double jac_ck = 0.0;
+
+                                if (c == k) {
+                                    jac_ck += u_dot_n;
+                                }
+
+                                jac_ck += u(c) * nor(k);
+
+                                Auu(ia, ib) += Nu(a) * Nu(b) * jac_ck * w;
+                            }
+                        }
+                    }
+                }
             }
         }
     };

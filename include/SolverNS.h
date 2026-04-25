@@ -56,7 +56,11 @@ namespace fracture {
             }
 
             bnlf = new mfem::ParBlockNonlinearForm(femach.fespace_block_up);
-            bnlf->AddDomainIntegrator(new StokesBlockIntegBDF2(idata, tlf, 2, femach.ordering, pcase->forcing_rhs));
+            bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2(idata, tlf, 2, femach.ordering, pcase->forcing_rhs));
+            bnlf->AddBdrFaceIntegrator(
+                new NSEBlockIntegBDF2OutletConvectiveFlux(idata, tlf, 2, femach.ordering, nullptr),
+                pcase->outlet_marker
+                );
         }
 
         ~NSEBlockOperator() override {

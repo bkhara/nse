@@ -69,22 +69,28 @@ namespace fracture {
     private:
         double nu_;
         double omega_;
+        bool disable_convection_;
 
     public:
-        MMS2DStokesRHS(double mu,
-                       double omega)
+        MMS2DStokesRHS(double omega,
+                       double nu,
+                       bool disable_convection = false)
             : VectorCoefficient(2),
-              nu_(mu), omega_(omega) {
+              omega_(omega),
+              nu_(nu),
+              disable_convection_(disable_convection) {
         }
 
-        void Eval(Vector &f, ElementTransformation &T,
-                  const IntegrationPoint &ip) override {
+        void Eval(Vector& f, ElementTransformation& T,
+                  const IntegrationPoint& ip) override {
             Vector x(2);
             T.Transform(ip, x);
+
             const double X = x[0];
             const double Y = x[1];
 
             const double t = GetTime();
+
             const double ct = std::cos(omega_ * t);
             const double st = std::sin(omega_ * t);
 
@@ -95,22 +101,46 @@ namespace fracture {
 
             f.SetSize(2);
 
-            // f = rho u_t - mu Delta u + grad p
-
-            // u1 =  pi sin(pi x) cos(pi y) cos(omega t)
-            // u2 = -pi cos(pi x) sin(pi y) cos(omega t)
+            // ------------------------------------------------------------
+            // PDE:
             //
-            // p  = sin(pi x) sin(pi y) cos(omega t)
+            // u_t + div(u \otimes u) - nu Delta u + grad p = f
+            //
+            // If disable_convection_ == true, this reduces to the Stokes MMS:
+            //
+            // u_t - nu Delta u + grad p = f
+            // ------------------------------------------------------------
 
+            // Stokes part:
+            //
+            // f = u_t - nu Delta u + grad p
             f[0] =
-                    -omega_ * M_PI * sx * cy * st
-                    + 2.0 * nu_ * M_PI * M_PI * M_PI * sx * cy * ct
-                    + M_PI * cx * sy * ct;
+                -omega_ * M_PI * sx * cy * st
+                + 2.0 * nu_ * M_PI * M_PI * M_PI * sx * cy * ct
+                + M_PI * cx * sy * ct;
 
             f[1] =
-                    +omega_ * M_PI * cx * sy * st
-                    - 2.0 * nu_ * M_PI * M_PI * M_PI * cx * sy * ct
-                    + M_PI * sx * cy * ct;
+                +omega_ * M_PI * cx * sy * st
+                - 2.0 * nu_ * M_PI * M_PI * M_PI * cx * sy * ct
+                + M_PI * sx * cy * ct;
+
+            // NSE convection part:
+            //
+            // div(u \otimes u) = (u . grad)u + u div(u)
+            //
+            // For this MMS, div(u) = 0, so:
+            //
+            // div(u \otimes u) = (u . grad)u
+            //
+            // conv_1 = pi^3 sin(pi x) cos(pi x) cos^2(omega t)
+            // conv_2 = pi^3 sin(pi y) cos(pi y) cos^2(omega t)
+            if (!disable_convection_) {
+                const double ct2 = ct * ct;
+                const double pi3 = M_PI * M_PI * M_PI;
+
+                f[0] += pi3 * sx * cx * ct2;
+                f[1] += pi3 * sy * cy * ct2;
+            }
         }
     };
 
@@ -142,7 +172,7 @@ namespace fracture {
         exact_velocity(omega), exact_pressure(omega) {
 
             // instantiate forcing
-            forcing_rhs = new MMS2DStokesRHS(idata.flow_properties_inputs.nu, omega);
+            forcing_rhs = new MMS2DStokesRHS(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
 
             // check parameters before proceeding
             {
@@ -169,6 +199,10 @@ namespace fracture {
 
         void ObtainElasticityBoundaryDOFs() override
         {
+            // this case does not have outlet
+            outlet_marker.SetSize(0);
+
+            // Dirichlet BCs
             bdr_attr_u.SetSize(fem.mesh->bdr_attributes.Max());
             bdr_attr_u = 0;
             bdr_attr_u[LEFT-1]  = 1;

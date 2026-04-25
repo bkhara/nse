@@ -24,6 +24,7 @@ namespace fracture {
         Array<int> ess_tdof_list_p;
         Array<int> ess_tdof_list_u_loaded_X;
         Array<int> ess_tdof_list_u_loaded_Y;
+        Array<int> outlet_marker;
 
         VectorCoefficient *forcing_rhs = nullptr;
 

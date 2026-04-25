@@ -71,6 +71,10 @@ namespace fracture {
 
             ess_tdof_list_u.Sort();
             ess_tdof_list_u.Unique();
+
+            // OUTLET Marker
+            outlet_marker.SetSize(fem.mesh->bdr_attributes.Max());
+            outlet_marker[OUTLET - 1] = 1;
         }
 
         void ApplyElasticityBC(FractureGridFields& fgf) override {
@@ -94,7 +98,7 @@ namespace fracture {
 
             const double ymin = -2.5;
             const double ymax = 2.5; // common benchmark channel height
-            const double Umax = 1.5; // example value; choose based on desired Re
+            const double Umax = 1.0; // example value; choose based on desired Re
 
             FunctionCoefficient inlet_ux(
                 [=](const Vector& x) {
