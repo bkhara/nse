@@ -100,38 +100,13 @@ namespace fracture {
                 double staggered_iters_this_step = 0;
                 double stage_timing_ns = 0;
 
-                for (int stag_it = 0; stag_it < stag_max_it; stag_it++) {
-                    idata.run_ctx.stag_it = stag_it;
+                {
+                    t_ns.Start();
+                    // el_solver.SolveStep(t, dt);
+                    ns_solver.SolveStep(t, dt);
+                    t_ns.Stop();
 
-                    {
-                        t_ns.Start();
-                        // el_solver.SolveStep(t, dt);
-                        ns_solver.SolveStep(t, dt);
-                        t_ns.Stop();
-
-                        stage_timing_ns += t_ns.GetLastTimeSeconds();
-                    }
-
-                    double stag_error = 0.0;
-
-                    tlf.UpdateStaggeredIterates();
-
-                    staggered_iters_this_step++;
-                    staggered_iters_total++;
-
-                    // check for termination
-                    if (stag_error < stag_ctol) {
-                        if (!myrank) {
-                            std::cout << "Staggered iterations converged by STAG_ATOL::" << idata.stag_config.norm_type_string << "\n";
-                        }
-                        break;
-                    }
-                    if (stag_it == stag_max_it - 1) {
-                        if (!myrank) {
-                            std::cout << "Reached STAG_MAX_IT. Exiting.\n";
-                        }
-                        break;
-                    }
+                    stage_timing_ns += t_ns.GetLastTimeSeconds();
                 }
 
                 // post processing tasks
@@ -165,8 +140,8 @@ namespace fracture {
 
                 // print final info
                 if (!myrank) {
-                    std::cout << "Step=" << n << ", [STEP-time::NS](total,sec)=" << stage_timing_ns << ", [STAG-time::NS](avg,sec)=" << stage_timing_ns/staggered_iters_this_step << "\n";
-                    std::cout << "t=" << t << "\n";
+                    // std::cout << "[STEP-time::NS](total,sec)=" << stage_timing_ns << ", [STAG-time::NS](avg,sec)=" << stage_timing_ns/staggered_iters_this_step << "\n";
+                    std::cout << "Step=" << n << ", t=" << t << "\n";
                     std::cout << "\n";
                 }
             }
