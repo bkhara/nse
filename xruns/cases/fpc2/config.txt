@@ -51,7 +51,11 @@ method_config = {
 
 fpc2d_inputs = {
     H = 5.0;
-    cylinder_flip_sign_for_force_calc = false;
+    cylinder_flip_sign_for_force_calc = true;
+    initial_noise = {
+        num_initial_steps = 20;
+        eps = 1e-2;
+    }
 }
 
 file_write_freq = 5;

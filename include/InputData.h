@@ -610,12 +610,19 @@ namespace nse {
     };
 
     struct FPC2DInputs {
+        struct InitialNoise {
+            double num_initial_steps = 20;
+            double eps = 1e-2;
+        };
         double H = 5.0; // channel width
-        bool cylinder_flip_sign_for_force_calc = false;
+        bool cylinder_flip_sign_for_force_calc = true;
+        InitialNoise initial_noise;
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading FPC2DInputs\n"; }
             reader.ReadValue("fpc2d_inputs.H", H);
             reader.ReadValue("fpc2d_inputs.cylinder_flip_sign_for_force_calc", cylinder_flip_sign_for_force_calc);
+            reader.ReadValue("fpc2d_inputs.initial_noise.num_initial_steps", initial_noise.num_initial_steps);
+            reader.ReadValue("fpc2d_inputs.initial_noise.eps", initial_noise.eps);
         }
     };
 

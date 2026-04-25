@@ -93,6 +93,9 @@ namespace nse {
         }
 
         void ApplyElasticityBC(NSEGridFields& fgf) override {
+            const double t = tlf.GetTime();
+            const double dt = tlf.GetTimeStep();
+
             Array<int> bdr_attr;
             bdr_attr.SetSize(fem.mesh->bdr_attributes.Max());
 
@@ -123,12 +126,32 @@ namespace nse {
                     return 4.0 * Umax * (y - ymin) * (ymax - y) / (H * H);
                 });
 
+            // Perturb only during startup.
+            const double perturb_time = idata.fpc2d_inputs.initial_noise.num_initial_steps * dt;
+            const double eps = idata.fpc2d_inputs.initial_noise.eps;
+            FunctionCoefficient inlet_uy_perturbed(
+                [=](const Vector &x) {
+                    if (t >= perturb_time) {
+                        return 0.0;
+                    }
+
+                    const double y = x(1);
+                    const double yc = 0.5 * (ymin + ymax);
+                    const double halfH = 0.5 * (ymax - ymin);
+
+                    const double eta = (y - yc) / halfH; // eta in [-1, 1]
+
+                    // Antisymmetric about channel centerline.
+                    // Zero at centerline and at top/bottom walls.
+                    return eps * Umax * eta * (1.0 - eta * eta);
+                });
+
             {
                 bdr_attr = 0;
                 bdr_attr[INLET - 1] = 1;
 
                 coeffs[0] = &inlet_ux;
-                coeffs[1] = &zero;
+                coeffs[1] = &inlet_uy_perturbed; // = 0 for t > perturb_time
 
                 fgf.u.ProjectBdrCoefficient(coeffs.data(), bdr_attr);
             }
