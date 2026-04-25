@@ -22,14 +22,41 @@ namespace fracture {
         }
     };
 
-    static inline int VDofIndex(const int dof,
-                                    const int vdim,
-                                    const int a,
-                                    const int comp,
-                                    const mfem::Ordering::Type ordering) {
+    static inline int VDofIndex(const int ndof,
+                                const int vdim,
+                                const int a,
+                                const int comp,
+                                const mfem::Ordering::Type ordering) {
+        /*
+           Local element vector layout.
+
+           Here:
+               ndof = number of scalar dofs on the element
+               vdim = number of vector components
+               a    = scalar local dof index, 0 <= a < ndof
+               comp = component index,        0 <= comp < vdim
+
+           byNODES layout:
+               [dof0_comp0, dof0_comp1, ..., dof0_comp(vdim-1),
+                dof1_comp0, dof1_comp1, ..., dof1_comp(vdim-1),
+                ...]
+
+               index = a * vdim + comp
+
+           byVDIM layout:
+               [comp0_dof0, comp0_dof1, ..., comp0_dof(ndof-1),
+                comp1_dof0, comp1_dof1, ..., comp1_dof(ndof-1),
+                ...]
+
+               index = comp * ndof + a
+        */
+
+        MFEM_ASSERT(0 <= a && a < ndof, "invalid scalar local dof index");
+        MFEM_ASSERT(0 <= comp && comp < vdim, "invalid vector component index");
+
         return (ordering == mfem::Ordering::byNODES)
                    ? a * vdim + comp
-                   : comp * dof + a;
+                   : comp * ndof + a;
     }
 
     struct StaggeredIterationError {

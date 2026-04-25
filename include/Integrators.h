@@ -54,7 +54,7 @@ namespace fracture {
         const mfem::Ordering::Type ordering;
 
         static void EvalVectorAtIP(const mfem::Vector &elfun,
-                                   const int dof,
+                                   const int ndof,
                                    const int vdim,
                                    const mfem::Ordering::Type ordering,
                                    const mfem::Vector &N,
@@ -63,14 +63,14 @@ namespace fracture {
             u = 0.0;
 
             for (int c = 0; c < vdim; c++) {
-                for (int a = 0; a < dof; a++) {
-                    u(c) += elfun(VDofIndex(dof, vdim, a, c, ordering)) * N(a);
+                for (int a = 0; a < ndof; a++) {
+                    u(c) += elfun(VDofIndex(ndof, vdim, a, c, ordering)) * N(a);
                 }
             }
         }
 
         static void EvalVectorGradAtIP(const mfem::Vector &elfun,
-                                       const int dof,
+                                       const int ndof,
                                        const int vdim,
                                        const mfem::Ordering::Type ordering,
                                        const mfem::DenseMatrix &dN,
@@ -80,8 +80,8 @@ namespace fracture {
             grad_u = 0.0;
 
             for (int c = 0; c < vdim; c++) {
-                for (int a = 0; a < dof; a++) {
-                    const double ua = elfun(VDofIndex(dof, vdim, a, c, ordering));
+                for (int a = 0; a < ndof; a++) {
+                    const double ua = elfun(VDofIndex(ndof, vdim, a, c, ordering));
                     for (int j = 0; j < dim; j++) {
                         grad_u(c, j) += ua * dN(a, j);
                     }
@@ -145,26 +145,26 @@ namespace fracture {
             const mfem::FiniteElement& el_u = *el[0];
             const mfem::FiniteElement& el_p = *el[1];
 
-            const int dof_u = el_u.GetDof();
-            const int dof_p = el_p.GetDof();
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
             const int dim = T.GetSpaceDim();
 
             MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
 
-            elvec[0]->SetSize(vdim * dof_u);
+            elvec[0]->SetSize(vdim * ndof_u);
             *elvec[0] = 0.0;
 
-            elvec[1]->SetSize(dof_p);
+            elvec[1]->SetSize(ndof_p);
             *elvec[1] = 0.0;
 
             const mfem::Vector& eu = *elfun[0];
             const mfem::Vector& ep = *elfun[1];
 
-            mfem::Vector Nu(dof_u), Np(dof_p);
-            mfem::DenseMatrix dNu(dof_u, dim);
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
 
-            mfem::Vector u_np1(vdim), u_n(vdim), u_nm1(vdim), f_np1(vdim);
-            mfem::DenseMatrix grad_u_np1(vdim, dim);
+            mfem::Vector u_n(vdim), u_nm1(vdim), u_nm2(vdim), f_n(vdim);
+            mfem::DenseMatrix grad_u_n(vdim, dim);
 
             const int e = T.ElementNo;
             const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
@@ -184,24 +184,24 @@ namespace fracture {
 
                 const double wdet = ip.weight * T.Weight();
 
-                EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u_np1);
-                EvalVectorGradAtIP(eu, dof_u, vdim, ordering, dNu, grad_u_np1);
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u_n);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u_n);
 
-                const double p_np1 = EvalScalarAtIP(ep, Np);
+                const double p_n = EvalScalarAtIP(ep, Np);
 
-                tlf.prev_1.u.GetVectorValue(T, ip, u_n);
-                tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
+                tlf.prev_1.u.GetVectorValue(T, ip, u_nm1);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm2);
 
-                f_np1.SetSize(vdim);
-                f_np1 = 0.0;
+                f_n.SetSize(vdim);
+                f_n = 0.0;
                 if (f_coeff) {
                     f_coeff->SetTime(ctime);
-                    f_coeff->Eval(f_np1, T, ip);
+                    f_coeff->Eval(f_n, T, ip);
                 }
 
-                double div_u_np1 = 0.0;
+                double div_u_n = 0.0;
                 for (int c = 0; c < vdim; c++) {
-                    div_u_np1 += grad_u_np1(c, c);
+                    div_u_n += grad_u_n(c, c);
                 }
 
                 // ------------------------------------------------------------
@@ -232,17 +232,17 @@ namespace fracture {
                 // boundaries since the test function is zero there. For open/outflow
                 // boundaries, add a separate boundary integrator if needed.
                 // ------------------------------------------------------------
-                for (int a = 0; a < dof_u; a++) {
+                for (int a = 0; a < ndof_u; a++) {
                     for (int c = 0; c < vdim; c++) {
-                        const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
 
                         // BDF2 mass contribution from u^{n+1}
                         (*elvec[0])(ia) +=
-                            (3.0 / (2.0 * dt)) * u_np1(c) * Nu(a) * wdet;
+                            (3.0 / (2.0 * dt)) * u_n(c) * Nu(a) * wdet;
 
                         // BDF2 history contribution
                         (*elvec[0])(ia) +=
-                            -(4.0 * u_n(c) - u_nm1(c)) / (2.0 * dt) * Nu(a) * wdet;
+                            -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt) * Nu(a) * wdet;
 
                         // Conservative convection contribution:
                         //
@@ -255,21 +255,21 @@ namespace fracture {
                         if (not idata.flow_properties.disable_convection) {
                             for (int j = 0; j < dim; j++) {
                                 (*elvec[0])(ia) +=
-                                    -u_np1(c) * u_np1(j) * dNu(a, j) * wdet;
+                                    -u_n(c) * u_n(j) * dNu(a, j) * wdet;
                             }
                         }
 
                         // Diffusion contribution
                         for (int j = 0; j < dim; j++) {
                             (*elvec[0])(ia) +=
-                                nu * grad_u_np1(c, j) * dNu(a, j) * wdet;
+                                nu * grad_u_n(c, j) * dNu(a, j) * wdet;
                         }
 
                         // Pressure contribution
-                        (*elvec[0])(ia) += -p_np1 * dNu(a, c) * wdet;
+                        (*elvec[0])(ia) += -p_n * dNu(a, c) * wdet;
 
                         // Forcing contribution
-                        (*elvec[0])(ia) += -f_np1(c) * Nu(a) * wdet;
+                        (*elvec[0])(ia) += -f_n(c) * Nu(a) * wdet;
                     }
                 }
 
@@ -278,8 +278,8 @@ namespace fracture {
                 //
                 // (q, div u^{n+1})
                 // ------------------------------------------------------------
-                for (int a = 0; a < dof_p; a++) {
-                    (*elvec[1])(a) += Np(a) * div_u_np1 * wdet;
+                for (int a = 0; a < ndof_p; a++) {
+                    (*elvec[1])(a) += Np(a) * div_u_n * wdet;
                 }
             }
         }
@@ -291,22 +291,22 @@ namespace fracture {
             const mfem::FiniteElement& el_u = *el[0];
             const mfem::FiniteElement& el_p = *el[1];
 
-            const int dof_u = el_u.GetDof();
-            const int dof_p = el_p.GetDof();
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
             const int dim = T.GetSpaceDim();
 
             MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
 
-            elmat(0, 0)->SetSize(vdim * dof_u, vdim * dof_u);
+            elmat(0, 0)->SetSize(vdim * ndof_u, vdim * ndof_u);
             *elmat(0, 0) = 0.0;
 
-            elmat(0, 1)->SetSize(vdim * dof_u, dof_p);
+            elmat(0, 1)->SetSize(vdim * ndof_u, ndof_p);
             *elmat(0, 1) = 0.0;
 
-            elmat(1, 0)->SetSize(dof_p, vdim * dof_u);
+            elmat(1, 0)->SetSize(ndof_p, vdim * ndof_u);
             *elmat(1, 0) = 0.0;
 
-            elmat(1, 1)->SetSize(dof_p, dof_p);
+            elmat(1, 1)->SetSize(ndof_p, ndof_p);
             *elmat(1, 1) = 0.0;
 
             mfem::DenseMatrix& Auu = *elmat(0, 0);
@@ -315,10 +315,10 @@ namespace fracture {
 
             const mfem::Vector& eu = *elfun[0];
 
-            mfem::Vector Nu(dof_u), Np(dof_p);
-            mfem::DenseMatrix dNu(dof_u, dim);
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
 
-            mfem::Vector u_np1(vdim);
+            mfem::Vector u_n(vdim);
             mfem::DenseMatrix grad_u_np1(vdim, dim);
 
             const int e = T.ElementNo;
@@ -337,8 +337,8 @@ namespace fracture {
 
                 const double wdet = ip.weight * T.Weight();
 
-                EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u_np1);
-                EvalVectorGradAtIP(eu, dof_u, vdim, ordering, dNu, grad_u_np1);
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u_n);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u_np1);
 
                 // ------------------------------------------------------------
                 // Auu block
@@ -369,8 +369,8 @@ namespace fracture {
                 // - delta_{ck} du_k sum_j u_j d_j v_c
                 // - u_c du_k d_k v_c
                 // ------------------------------------------------------------
-                for (int a = 0; a < dof_u; a++) {
-                    for (int b = 0; b < dof_u; b++) {
+                for (int a = 0; a < ndof_u; a++) {
+                    for (int b = 0; b < ndof_u; b++) {
                         const double mass_ab =
                             (3.0 / (2.0 * dt)) * Nu(a) * Nu(b) * wdet;
 
@@ -381,8 +381,8 @@ namespace fracture {
 
                         // Mass + diffusion: diagonal in velocity components
                         for (int c = 0; c < vdim; c++) {
-                            const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
-                            const int ib = VDofIndex(dof_u, vdim, b, c, ordering);
+                            const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+                            const int ib = VDofIndex(ndof_u, vdim, b, c, ordering);
 
                             Auu(ia, ib) += mass_ab + diff_ab;
                         }
@@ -396,18 +396,18 @@ namespace fracture {
                             //
                             double u_dot_grad_Na = 0.0;
                             for (int j = 0; j < dim; j++) {
-                                u_dot_grad_Na += u_np1(j) * dNu(a, j);
+                                u_dot_grad_Na += u_n(j) * dNu(a, j);
                             }
 
                             for (int c = 0; c < vdim; c++) {
-                                const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+                                const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
 
                                 for (int k = 0; k < vdim; k++) {
-                                    const int ib = VDofIndex(dof_u, vdim, b, k, ordering);
+                                    const int ib = VDofIndex(ndof_u, vdim, b, k, ordering);
 
                                     double conv_jac = 0.0;
 
-                                    // First variation:
+                                    // Variation in the first term:
                                     //
                                     // - (du \otimes u, grad v)
                                     //
@@ -419,7 +419,7 @@ namespace fracture {
                                         conv_jac += -Nu(b) * u_dot_grad_Na;
                                     }
 
-                                    // Second variation:
+                                    // Variation in the second term:
                                     //
                                     // - (u \otimes du, grad v)
                                     //
@@ -427,7 +427,7 @@ namespace fracture {
                                     //
                                     // - u_c phi_b d_k phi_a
                                     //
-                                    conv_jac += -u_np1(c) * Nu(b) * dNu(a, k);
+                                    conv_jac += -u_n(c) * Nu(b) * dNu(a, k);
 
                                     Auu(ia, ib) += conv_jac * wdet;
                                 }
@@ -441,11 +441,11 @@ namespace fracture {
                 //
                 // d/dp [ -(p, div v) ]
                 // ------------------------------------------------------------
-                for (int a = 0; a < dof_u; a++) {
+                for (int a = 0; a < ndof_u; a++) {
                     for (int c = 0; c < vdim; c++) {
-                        const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
 
-                        for (int b = 0; b < dof_p; b++) {
+                        for (int b = 0; b < ndof_p; b++) {
                             Aup(ia, b) += -Np(b) * dNu(a, c) * wdet;
                         }
                     }
@@ -456,10 +456,10 @@ namespace fracture {
                 //
                 // d/du [ (q, div u) ]
                 // ------------------------------------------------------------
-                for (int a = 0; a < dof_p; a++) {
-                    for (int b = 0; b < dof_u; b++) {
+                for (int a = 0; a < ndof_p; a++) {
+                    for (int b = 0; b < ndof_u; b++) {
                         for (int c = 0; c < vdim; c++) {
-                            const int ib = VDofIndex(dof_u, vdim, b, c, ordering);
+                            const int ib = VDofIndex(ndof_u, vdim, b, c, ordering);
 
                             Apu(a, ib) += Np(a) * dNu(b, c) * wdet;
                         }
@@ -494,18 +494,18 @@ namespace fracture {
             const mfem::FiniteElement& el_u = *el1[0];
             const mfem::FiniteElement& el_p = *el1[1];
 
-            const int dof_u = el_u.GetDof();
-            const int dof_p = el_p.GetDof();
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
             const int dim = Tr.Elem1->GetSpaceDim();
 
             MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
 
-            elvec[0]->SetSize(vdim * dof_u);
+            elvec[0]->SetSize(vdim * ndof_u);
             *elvec[0] = 0.0;
 
             // Pressure residual gets no outlet convective-flux contribution,
             // but it must still have the correct block size.
-            elvec[1]->SetSize(dof_p);
+            elvec[1]->SetSize(ndof_p);
             *elvec[1] = 0.0;
 
             if (idata.flow_properties.disable_convection) {
@@ -514,7 +514,7 @@ namespace fracture {
 
             const mfem::Vector& eu = *elfun[0];
 
-            mfem::Vector Nu(dof_u);
+            mfem::Vector Nu(ndof_u);
             mfem::Vector u(vdim);
             mfem::Vector nor(dim);
 
@@ -534,7 +534,7 @@ namespace fracture {
 
                 el_u.CalcShape(ip_el, Nu);
 
-                EvalVectorAtIP(eu, dof_u, vdim, ordering, Nu, u);
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u);
 
                 // CalcOrtho gives the scaled physical normal:
                 //
@@ -556,9 +556,9 @@ namespace fracture {
                 // <(u \otimes u)n, v>
                 // =
                 // <u (u . n), v>
-                for (int a = 0; a < dof_u; a++) {
+                for (int a = 0; a < ndof_u; a++) {
                     for (int c = 0; c < vdim; c++) {
-                        const int ia = VDofIndex(dof_u, vdim, a, c, ordering);
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
 
                         (*elvec[0])(ia) += Nu(a) * u(c) * u_dot_n * w;
                     }

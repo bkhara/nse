@@ -26,8 +26,8 @@ namespace fracture {
         FPC_2D = 302,
     };
     enum CouplingFormulation : unsigned int {
-        FULLY_COUPLED = 0,
-        STAGGERED_COUPLED = 1,
+        FULLY_COUPLED = 0, // both stabilized and unstabilized
+        UNCOUPLED = 1, // projection method
     };
     enum BoundEnforcementType : unsigned int {
         SINGLE_SIDED_CONSTRAINT = 0,
@@ -72,13 +72,11 @@ namespace fracture {
         inline constexpr std::string_view H1 = "h1";
         inline constexpr std::string_view L2 = "l2";
     };
-    namespace IEMethod { // Inequality Enforcement Method Name
+    namespace NSStabilizationMethod { // Inequality Enforcement Method Name
         // NONE uses HISTFUNC integrators but does not apply the history functional
-        inline constexpr std::string_view NO_ENFORCEMENT = "none"; // no enforcement of inequality
-        inline constexpr std::string_view PENALTY = "pen"; // penalty
-        inline constexpr std::string_view PG = "pg"; // proximal Galerkin
-        inline constexpr std::string_view HISTFUNC = "hf"; // history functional
-        inline constexpr std::string_view AL = "al"; // augmented Lagrangian
+        inline constexpr std::string_view UNSTABILIZED = "none"; // plain NSE without any modification
+        inline constexpr std::string_view VMS_STABILIZED = "vms"; // vms for velocity (and / or pressure)
+        inline constexpr std::string_view SUPG_STABILIZED = "supg"; // supg
     }
     namespace PetscSolverPrefix {
         inline constexpr std::string_view ELASTICITY = "el_";
@@ -226,54 +224,26 @@ namespace fracture {
         }
     };
     struct MethodConfig {
-        CouplingFormulation formulation = STAGGERED_COUPLED;
-        std::string ie_method = std::string(IEMethod::PG);
-        bool no_enforcement = false; // experimental, and only works with HF
-        bool use_two_sided_constraint = false;
-        bool use_snes = true;
+        CouplingFormulation coupling_form = FULLY_COUPLED;
+        std::string stab_scheme = std::string(NSStabilizationMethod::SUPG_STABILIZED);
 
-        BoundEnforcementType bound_type = SINGLE_SIDED_CONSTRAINT;
-
-        bool use_ie_none() const {
-            return ie_method == IEMethod::NO_ENFORCEMENT;
+        bool use_stab_none() const {
+            return stab_scheme == NSStabilizationMethod::UNSTABILIZED;
         }
-        bool use_ie_penalty() const {
-            return ie_method == IEMethod::PENALTY;
+        bool use_stab_vms() const {
+            return stab_scheme == NSStabilizationMethod::VMS_STABILIZED;
         }
-        bool use_ie_pg() const {
-            return ie_method == IEMethod::PG;
-        }
-        bool use_ie_hf() const {
-            return ie_method == IEMethod::HISTFUNC;
-        }
-        bool use_ie_al() const {
-            return ie_method == IEMethod::AL;
-        }
-        bool remove_ie() const {
-            return no_enforcement;
-        }
-        bool use_double_bound() const {
-            return use_two_sided_constraint;
+        bool use_stab_supg() const {
+            return stab_scheme == NSStabilizationMethod::SUPG_STABILIZED;
         }
 
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading MethodInfo\n"; }
-            reader.ReadValue("method_config.ie_method", ie_method);
-            if (use_ie_none()) {
-                if (!mfem::Mpi::WorldRank()) {
-                    std::cout << "ie_method=" << ie_method << " selected. This will internally set:\n";
-                    std::cout << "   * ie_method = " << IEMethod::HISTFUNC << "\n";
-                    std::cout << "   * no_enforcement = " << true << "\n";
-                }
-                ie_method = IEMethod::HISTFUNC;
-                no_enforcement = true;
-            }
-            // reader.ReadValue("method_config.no_enforcement", no_enforcement);
-            reader.ReadValue("method_config.use_snes", use_snes);
-            reader.ReadValue("method_config.use_two_sided_constraint", use_two_sided_constraint);
-            bound_type = SINGLE_SIDED_CONSTRAINT;
-            if (use_two_sided_constraint) {
-                bound_type = DOUBLE_SIDED_CONSTRAINT;
+            reader.ReadValue("method_config.stab_scheme", stab_scheme);
+            {
+                auto tmp = static_cast<int>(coupling_form);
+                reader.ReadValue("method_config.coupling_form", tmp);
+                coupling_form = static_cast<CouplingFormulation>(tmp);
             }
         }
     };

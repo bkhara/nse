@@ -200,6 +200,7 @@ namespace fracture {
         void ObtainElasticityBoundaryDOFs() override
         {
             // this case does not have outlet
+            has_outlet_bc = false;
             outlet_marker.SetSize(0);
 
             // Dirichlet BCs

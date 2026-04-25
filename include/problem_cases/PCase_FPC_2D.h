@@ -87,6 +87,7 @@ namespace fracture {
             ess_tdof_list_u.Unique();
 
             // OUTLET Marker
+            has_outlet_bc = true;
             outlet_marker.SetSize(fem.mesh->bdr_attributes.Max());
             outlet_marker[OUTLET - 1] = 1;
         }
@@ -193,6 +194,11 @@ namespace fracture {
             if (Mpi::Root()) {
                 std::ofstream file(forcefilename.c_str(), std::ios_base::app);
                 file << t << "," << dl.drag << "," << dl.lift << "\n";
+                file.close();
+            }
+            if (Mpi::Root()) {
+                std::ofstream file(forcefilename.c_str(), std::ios_base::app);
+                std::cout << "t=" << t << ", Cd=" << dl.drag << ", Cl=" << dl.lift << "\n";
                 file.close();
             }
         }
