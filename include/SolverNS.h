@@ -101,8 +101,10 @@ namespace nse {
             for (int i = 0; i < 2; i++) {
                 for (int j = 0; j < 2; j++) {
                     // Retrieve the block and cast to const HypreParMatrix*
-                    mfem::Operator *op = &blockJ.GetBlock(i, j);
-                    blocks_array(i, j) = dynamic_cast<const mfem::HypreParMatrix *>(op);
+                    const auto *hpm = dynamic_cast<const mfem::HypreParMatrix *>(&blockJ.GetBlock(i, j));
+                    MFEM_VERIFY(hpm != nullptr,
+                                "Expected HypreParMatrix block in NSEBlockOperator::GetGradient.");
+                    blocks_array(i, j) = hpm;
                 }
             }
 
