@@ -12,6 +12,7 @@ namespace nse {
     struct NSEGridFields {
         ParGridFunction u;
         ParGridFunction p;
+        ParGridFunction u_corrected;
         QuadratureFunction Hq;
 
         explicit NSEGridFields(const FEMachinery &fem);

@@ -90,6 +90,14 @@ namespace nse {
             has_outlet_bc = true;
             outlet_marker.SetSize(fem.mesh->bdr_attributes.Max());
             outlet_marker[OUTLET - 1] = 1;
+
+            if (idata.method_config.is_coupled()) {
+                ess_tdof_list_p.SetSize(0);
+            } else if (idata.method_config.is_uncoupled()) {
+                ess_tdof_list_p.SetSize(fem.mesh->bdr_attributes.Max());
+                ess_tdof_list_p = 0.;
+                ess_tdof_list_p[OUTLET - 1] = 1;
+            }
         }
 
         void ApplyBC(NSEGridFields& fgf) override {

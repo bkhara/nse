@@ -9,12 +9,12 @@
 namespace nse {
     class TimeLevelFields;
 
-    class MMS2DStokesExactVelocity : public VectorCoefficient {
+    class MMS2DVelocity_Type1 : public VectorCoefficient {
     private:
         double omega_;
 
     public:
-        explicit MMS2DStokesExactVelocity(double omega)
+        explicit MMS2DVelocity_Type1(double omega)
             : VectorCoefficient(2), omega_(omega) {
         }
 
@@ -39,12 +39,12 @@ namespace nse {
         }
     };
 
-    class MMS2DStokesExactPressure : public Coefficient {
+    class MMS2DPressure_Type1 : public Coefficient {
     private:
         double omega_;
 
     public:
-        explicit MMS2DStokesExactPressure(double omega)
+        explicit MMS2DPressure_Type1(double omega)
             : omega_(omega) {
         }
 
@@ -65,16 +65,16 @@ namespace nse {
         }
     };
 
-    class MMS2DStokesRHS : public VectorCoefficient {
+    class MMS2DForcing_Type1 : public VectorCoefficient {
     private:
         double nu_;
         double omega_;
         bool disable_convection_;
 
     public:
-        MMS2DStokesRHS(double omega,
-                       double nu,
-                       bool disable_convection = false)
+        MMS2DForcing_Type1(double omega,
+                           double nu,
+                           bool disable_convection = false)
             : VectorCoefficient(2),
               omega_(omega),
               nu_(nu),
@@ -144,15 +144,176 @@ namespace nse {
         }
     };
 
+    class MMS2DPressure_Type2 : public mfem::Coefficient {
+    private:
+        double omega_;
+
+    public:
+        explicit MMS2DPressure_Type2(double omega)
+            : omega_(omega) {
+        }
+
+        double Eval(mfem::ElementTransformation& T,
+                    const mfem::IntegrationPoint& ip) override {
+            mfem::Vector x(2);
+            T.Transform(ip, x);
+
+            const double X = x[0];
+            const double Y = x[1];
+
+            const double t = GetTime();
+            const double ct = std::cos(omega_ * t);
+
+            const double sx = std::sin(M_PI * X);
+            const double sy = std::sin(M_PI * Y);
+
+            return sx * sy * ct + 2.0;
+        }
+    };
+
+    class MMS2DVelocity_Type2 : public mfem::VectorCoefficient {
+    private:
+        double omega_;
+
+    public:
+        explicit MMS2DVelocity_Type2(double omega)
+            : mfem::VectorCoefficient(2), omega_(omega) {
+        }
+
+        void Eval(mfem::Vector& u,
+                  mfem::ElementTransformation& T,
+                  const mfem::IntegrationPoint& ip) override {
+            mfem::Vector x(2);
+            T.Transform(ip, x);
+
+            const double X = x[0];
+            const double Y = x[1];
+
+            const double t = GetTime();
+            const double st = std::sin(omega_ * t);
+
+            const double sx = std::sin(M_PI * X);
+            const double cx = std::cos(M_PI * X);
+            const double sy = std::sin(M_PI * Y);
+            const double cy = std::cos(M_PI * Y);
+
+            u.SetSize(2);
+
+            u[0] = sx * cy * st + 2.0;
+            u[1] = -cx * sy * st + 2.0;
+        }
+    };
+
+    class MMS2DForcing_Type2 : public mfem::VectorCoefficient {
+    private:
+        double nu_;
+        double omega_;
+        bool disable_convection_;
+
+    public:
+        MMS2DForcing_Type2(double omega,
+                           double nu,
+                           bool disable_convection = false)
+            : mfem::VectorCoefficient(2),
+              nu_(nu),
+              omega_(omega),
+              disable_convection_(disable_convection) {
+        }
+
+        void Eval(mfem::Vector& f,
+                  mfem::ElementTransformation& T,
+                  const mfem::IntegrationPoint& ip) override {
+            mfem::Vector x(2);
+            T.Transform(ip, x);
+
+            const double X = x[0];
+            const double Y = x[1];
+
+            const double t = GetTime();
+
+            const double st = std::sin(omega_ * t);
+            const double ct = std::cos(omega_ * t);
+
+            const double sx = std::sin(M_PI * X);
+            const double cx = std::cos(M_PI * X);
+            const double sy = std::sin(M_PI * Y);
+            const double cy = std::cos(M_PI * Y);
+
+            f.SetSize(2);
+
+            // ------------------------------------------------------------
+            // Manufactured solution:
+            //
+            // u1 =  sin(pi x) cos(pi y) sin(omega t) + 2
+            // u2 = -cos(pi x) sin(pi y) sin(omega t) + 2
+            // p  =  sin(pi x) sin(pi y) cos(omega t) + 2
+            //
+            // PDE:
+            //
+            // u_t + div(u \otimes u) - nu Delta u + grad p = f
+            //
+            // Since div(u) = 0,
+            //
+            // div(u \otimes u) = (u . grad) u.
+            // ------------------------------------------------------------
+
+            // Time derivative:
+            //
+            // u1_t =  omega sin(pi x) cos(pi y) cos(omega t)
+            // u2_t = -omega cos(pi x) sin(pi y) cos(omega t)
+
+            // Diffusion:
+            //
+            // Delta u1 = -2 pi^2 sin(pi x) cos(pi y) sin(omega t)
+            // Delta u2 =  2 pi^2 cos(pi x) sin(pi y) sin(omega t)
+
+            // Pressure gradient:
+            //
+            // p_x = pi cos(pi x) sin(pi y) cos(omega t)
+            // p_y = pi sin(pi x) cos(pi y) cos(omega t)
+
+            f[0] =
+                omega_ * sx * cy * ct
+                + 2.0 * nu_ * M_PI * M_PI * sx * cy * st
+                + M_PI * cx * sy * ct;
+
+            f[1] =
+                -omega_ * cx * sy * ct
+                - 2.0 * nu_ * M_PI * M_PI * cx * sy * st
+                + M_PI * sx * cy * ct;
+
+            if (!disable_convection_) {
+                // Velocity values
+                const double u1 = sx * cy * st + 2.0;
+                const double u2 = -cx * sy * st + 2.0;
+
+                // Velocity gradients
+                const double u1_x = M_PI * cx * cy * st;
+                const double u1_y = -M_PI * sx * sy * st;
+
+                const double u2_x = M_PI * sx * sy * st;
+                const double u2_y = -M_PI * cx * cy * st;
+
+                // Conservative convection:
+                //
+                // div(u \otimes u) = (u . grad) u
+                //
+                // because div(u) = 0.
+                const double conv1 = u1 * u1_x + u2 * u1_y;
+                const double conv2 = u1 * u2_x + u2 * u2_y;
+
+                f[0] += conv1;
+                f[1] += conv2;
+            }
+        }
+    };
+
     class PCase_Stokes_MMS_2D : public ProblemCase {
         double omega;
         Array<int> bdr_attr_u;
         Array<int> bdr_attr_p;
         Array<int> traction_bdr_attr;
         ConstantCoefficient one;
-
-        MMS2DStokesExactVelocity exact_velocity;
-        MMS2DStokesExactPressure exact_pressure;
 
         int local_corner_vertex = -1;
 
@@ -168,11 +329,18 @@ namespace nse {
         public:
         PCase_Stokes_MMS_2D(InputData& idata, FEMachinery& fem, TimeLevelFields& tlf)
             : ProblemCase(idata, fem, tlf),
-        omega(M_PI),
-        exact_velocity(omega), exact_pressure(omega) {
+              omega(M_PI) {
 
-            // instantiate forcing
-            forcing_rhs = new MMS2DStokesRHS(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
+
+            if (idata.mms2d_inputs.mms_type == 1) {
+                exact_velocity = new MMS2DVelocity_Type1(omega);
+                exact_pressure = new MMS2DPressure_Type1(omega);
+                forcing_rhs = new MMS2DForcing_Type1(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
+            } else if (idata.mms2d_inputs.mms_type == 2) {
+                exact_velocity = new MMS2DVelocity_Type2(omega);
+                exact_pressure = new MMS2DPressure_Type2(omega);
+                forcing_rhs = new MMS2DForcing_Type2(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
+            }
 
             // check parameters before proceeding
             {
@@ -256,24 +424,24 @@ namespace nse {
         void SetTime(double const t) override {
             ProblemCase::SetTime(t);
             ProblemCase::SetTime(t);
-            exact_velocity.SetTime(t);
-            exact_pressure.SetTime(t);
+            exact_velocity->SetTime(t);
+            exact_pressure->SetTime(t);
             forcing_rhs->SetTime(t);
         }
 
         void SetIC(NSEGridFields& fgf) override {
-            exact_velocity.SetTime(0.);
-            fgf.u.ProjectCoefficient(exact_velocity);
+            exact_velocity->SetTime(0.);
+            fgf.u.ProjectCoefficient(*exact_velocity);
         }
 
         void ApplyBC(NSEGridFields &fgf) override {
-            fgf.u.ProjectBdrCoefficient(exact_velocity, bdr_attr_u);
+            fgf.u.ProjectBdrCoefficient(*exact_velocity, bdr_attr_u);
             // fgf.p.ProjectBdrCoefficient(exact_pressure, bdr_attr_p);
         }
 
         void SetAnalyticalSolution(NSEGridFields& fgf) override {
-            fgf.u.ProjectCoefficient(exact_velocity);
-            fgf.p.ProjectCoefficient(exact_pressure);
+            fgf.u.ProjectCoefficient(*exact_velocity);
+            fgf.p.ProjectCoefficient(*exact_pressure);
         }
 
         void PostStep(const double t, const double dt) override {
@@ -285,7 +453,7 @@ namespace nse {
             tlf.error -= tlf.exact;
 
             ParGridFunction &u_h = tlf.current.u;
-            VectorCoefficient &exact = exact_velocity;
+            VectorCoefficient &exact = *exact_velocity;
 
             const int vdim = u_h.FESpace()->GetVDim();
             std::vector<real_t> l2_comp(vdim, 0.0);
@@ -309,7 +477,7 @@ namespace nse {
             l2_err = std::sqrt(l2_err);
 
             ParGridFunction &p_h = tlf.current.p;
-            Coefficient &exact_p = exact_pressure;
+            Coefficient &exact_p = *exact_pressure;
             double err_p = p_h.ComputeL2Error(exact_p);
 
             if (!Mpi::WorldRank()) {

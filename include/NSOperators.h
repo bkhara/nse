@@ -114,4 +114,75 @@ namespace nse {
             return *matJ;
         }
     };
+
+    class NSEProjectionVelocityPredictorOperator : public mfem::Operator {
+    private:
+        InputData& idata;
+        FEMachinery& femach;
+        TimeLevelFields& tlf;
+        ProblemCase* pcase;
+        ProjectionScheme scheme;
+
+        mfem::ParNonlinearForm* nlf = nullptr;
+        mutable mfem::PetscParMatrix* matJ = nullptr;
+
+    public:
+        mfem::Array<int> ess_tdof_list_u;
+
+        NSEProjectionVelocityPredictorOperator(
+            InputData& idata,
+            FEMachinery& femach,
+            TimeLevelFields& tlf,
+            ProblemCase* pcase,
+            ProjectionScheme scheme)
+            : mfem::Operator(femach.fespace_primal_u->GetTrueVSize()),
+              idata(idata),
+              femach(femach),
+              tlf(tlf),
+              pcase(pcase),
+              scheme(scheme) {
+            ess_tdof_list_u = pcase->ess_tdof_list_u;
+
+            nlf = new mfem::ParNonlinearForm(femach.fespace_primal_u);
+
+            nlf->AddDomainIntegrator(
+                new NSEProjMomentumVMSInteg(
+                    idata,
+                    tlf,
+                    scheme,
+                    femach.el_vdim,
+                    femach.ordering,
+                    pcase->forcing_rhs));
+        }
+
+        ~NSEProjectionVelocityPredictorOperator() override {
+            delete nlf;
+            delete matJ;
+        }
+
+        void Mult(const mfem::Vector& U, mfem::Vector& B) const override {
+            nlf->Mult(U, B);
+
+            // Essential velocity rows.
+            B.SetSubVector(ess_tdof_list_u, 0.0);
+        }
+
+        mfem::Operator& GetGradient(const mfem::Vector& U) const override {
+            delete matJ;
+            matJ = nullptr;
+
+            mfem::Operator& Jop = nlf->GetGradient(U);
+
+            auto* hypreJ = dynamic_cast<mfem::HypreParMatrix*>(&Jop);
+            MFEM_VERIFY(hypreJ != nullptr,
+                        "Expected HypreParMatrix from velocity predictor Jacobian.");
+
+            matJ = new mfem::PetscParMatrix(hypreJ, mfem::Operator::PETSC_MATAIJ);
+
+            auto* Je = matJ->EliminateRowsCols(ess_tdof_list_u);
+            delete Je;
+
+            return *matJ;
+        }
+    };
 }

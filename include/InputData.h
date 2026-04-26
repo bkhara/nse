@@ -93,6 +93,27 @@ namespace nse {
         inline constexpr std::string_view WU = "wu";
     }
 
+    enum class ProjectionScheme {
+        ChorinFirstOrder,
+        IncPressureBDF2
+    };
+
+    struct ProjectionConfig {
+        ProjectionScheme scheme = ProjectionScheme::IncPressureBDF2;
+
+        bool IsBDF2() const {
+            return scheme == ProjectionScheme::IncPressureBDF2;
+        }
+
+        bool IsClassicChorin() const {
+            return scheme == ProjectionScheme::ChorinFirstOrder;
+        }
+    };
+
+    struct VMSConfig {
+        double Ci = 36.0;
+    };
+
     static const char *NormToString(Norm n) {
         switch (n) {
         case Norm::L0: return "L0";
@@ -616,6 +637,14 @@ namespace nse {
         }
     };
 
+    struct MMS2DInputs {
+        int mms_type = 0;
+        void ReadFromFile(InputReader &reader) {
+            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading MMS2DInputs\n"; }
+            reader.ReadValue("mms2d_inputs.mms_type", mms_type);
+        }
+    };
+
     struct FPC2DInputs {
         struct InitialNoise {
             double num_initial_steps = 20;
@@ -735,11 +764,14 @@ namespace nse {
         TimeMarchingConfig time_marching;
 
         MethodConfig method_config;
+        ProjectionConfig projection_config;
+        VMSConfig vms_config;
 
         RefinementConfig ref_config;
         StaggeredIterationConfig stag_config;
         Experimental experimental;
 
+        MMS2DInputs mms2d_inputs;
         FPC2DInputs fpc2d_inputs;
 
         InputData() : conf(true), reader("", &config) {
@@ -762,6 +794,7 @@ namespace nse {
             time_marching.ReadFromFile(reader);
             pcase_config.ReadFromFile(reader);
             flow_properties.ReadFromFile(reader);
+            mms2d_inputs.ReadFromFile(reader);
             fpc2d_inputs.ReadFromFile(reader);
             method_config.ReadFromFile(reader);
         }

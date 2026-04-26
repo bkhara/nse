@@ -5,15 +5,21 @@
 #include "TimeLevelFields.h"
 
 namespace nse {
-    NSEGridFields::NSEGridFields(const FEMachinery &fem): u(fem.fespace_primal_u),
-                                                                           p(fem.fespace_p),
-                                                                           Hq(fem.qspace, 1) {
+    NSEGridFields::NSEGridFields(const FEMachinery& fem) : u(fem.fespace_primal_u),
+                                                           p(fem.fespace_p),
+                                                           u_corrected(fem.fespace_primal_u),
+                                                           Hq(fem.qspace, 1) {
+        u = 0.;
+        p = 0.;
+        u_corrected = 0.;
+        Hq = 0.;
     }
 
     NSEGridFields & NSEGridFields::operator+=(const NSEGridFields &rhs) {
         MFEM_VERIFY(u.Size() == rhs.u.Size(), "size mismatch in u");
         u += rhs.u;
         p += rhs.p;
+        u_corrected += rhs.u_corrected;
         Hq += rhs.Hq;
         return *this;
     }
@@ -22,6 +28,7 @@ namespace nse {
         MFEM_VERIFY(u.Size() == rhs.u.Size(), "size mismatch in u");
         u -= rhs.u;
         p -= rhs.p;
+        u_corrected -= rhs.u_corrected;
         Hq -= rhs.Hq;
         return *this;
     }
@@ -29,6 +36,7 @@ namespace nse {
     void NSEGridFields::CopyFrom(const NSEGridFields &src) {
         u = src.u; // copies true dof vector data
         p = src.p;
+        u_corrected = src.u_corrected;
 
         Hq = src.Hq; // copies quad data
     }
@@ -58,6 +66,7 @@ namespace nse {
         {
             current.u = 0;
             current.p = 0;
+            current.u_corrected = 0.;
             current.Hq = 0;
         }
         UpdateTimeStepIterates();

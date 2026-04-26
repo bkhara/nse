@@ -59,11 +59,11 @@ int main(int argc, char *argv[]) {
             ProblemCase *pcase = nullptr; // polymorphic
             SelectProblemCase(idata, fem, tlf, pcase);
 
-            NSSolver *ns_solver;
+            NSSolver *ns_solver = nullptr;
             if (idata.method_config.is_coupled()) {
                 ns_solver = new NSSolverCoupled(idata, fem, tlf, pcase);
             } else if (idata.method_config.is_uncoupled()) {
-
+                ns_solver = new NSSolverUncoupled(idata, fem, tlf, pcase);
             }
 
             TimeStepper time_stepper(idata, fem, tlf, pcase, ns_solver);

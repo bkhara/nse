@@ -28,6 +28,8 @@ namespace nse {
         bool has_outlet_bc = false;
         Array<int> outlet_marker;
 
+        VectorCoefficient *exact_velocity = nullptr;
+        Coefficient *exact_pressure = nullptr;
         VectorCoefficient *forcing_rhs = nullptr;
 
         ProblemCase(InputData& idata, FEMachinery& fem, TimeLevelFields &tlf)

@@ -48,5 +48,8 @@ method_config = {
     coupling_form = 0; # 0: coupled, 1: uncoupled
 }
 
+mms2d_inputs = {
+    mms_type = 2; # 1 or 2
+}
 
 file_write_freq = 10;
