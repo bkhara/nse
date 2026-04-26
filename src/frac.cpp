@@ -59,9 +59,9 @@ int main(int argc, char *argv[]) {
             ProblemCase *pcase = nullptr; // polymorphic
             SelectProblemCase(idata, fem, tlf, pcase);
 
-            SolverNS *ns_solver;
+            NSSolver *ns_solver;
             if (idata.method_config.is_coupled()) {
-                ns_solver = new SolverNSCoupled(idata, fem, tlf, pcase);
+                ns_solver = new NSSolverCoupled(idata, fem, tlf, pcase);
             } else if (idata.method_config.is_uncoupled()) {
 
             }

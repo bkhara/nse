@@ -21,7 +21,7 @@ namespace nse {
         TimeLevelFields &tlf;
         ProblemCase *pcase;
 
-        SolverNS *ns_solver = nullptr;
+        NSSolver *ns_solver = nullptr;
 
         ParaViewDataCollection pvdc;
         ParaViewDataCollection pvdc_q;
@@ -36,7 +36,7 @@ namespace nse {
         RestartMeta restart_meta;
 
     public:
-        TimeStepper(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase, SolverNS *ns_solver)
+        TimeStepper(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase, NSSolver *ns_solver)
             : myrank(Mpi::WorldRank()), idata(idata), fem(fem), tlf(tlf), pcase(pcase), ns_solver(ns_solver),
               pvdc("pv", fem.mesh), pvdc_q("pvq", fem.mesh),
               t_ns(MPI_COMM_WORLD, "solve_elasticity"),

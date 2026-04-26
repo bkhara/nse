@@ -8,7 +8,7 @@
 #include "NSOperators.h"
 
 namespace nse {
-    class SolverNS {
+    class NSSolver {
     protected:
         int myrank;
 
@@ -19,7 +19,7 @@ namespace nse {
         ProblemCase *pcase;
 
     public:
-        SolverNS(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
+        NSSolver(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
             : myrank(Mpi::WorldRank()),
               idata(idata), fem(fem), tlf(tlf), pcase(pcase) {
             if (myrank == 0) {
@@ -29,22 +29,22 @@ namespace nse {
             pcase->ObtainBoundaryDOFs();
         }
 
-        virtual ~SolverNS() = default;
+        virtual ~NSSolver() = default;
 
         virtual void SolveStep(const double t, const double dt) {
             MFEM_ABORT("SolverNSBase::SolveStep: base class is being instantiated. Use a derived class.");
         }
     };
 
-    class SolverNSCoupled : public SolverNS {
+    class NSSolverCoupled : public NSSolver {
 
         NSEBlockOperator *nse_block_op;
         PetscNonlinearSolver *petsc_nonlinear_solver = nullptr;
         SNES snes;
 
     public:
-        SolverNSCoupled(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
-            : SolverNS(idata, fem, tlf, pcase) {
+        NSSolverCoupled(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
+            : NSSolver(idata, fem, tlf, pcase) {
             if (myrank == 0) {
                 mfem::out << "SolverNSCoupled constructor\n";
             }
@@ -56,7 +56,7 @@ namespace nse {
             snes = static_cast<petsc::SNES>(*petsc_nonlinear_solver);
         }
 
-        ~SolverNSCoupled() override {
+        ~NSSolverCoupled() override {
             delete petsc_nonlinear_solver;
             delete nse_block_op;
         }
