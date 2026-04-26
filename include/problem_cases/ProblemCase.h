@@ -50,11 +50,7 @@ namespace nse {
 
         /** This function fills the essential BC nodes in @p ess_tdof_list_u
          */
-        virtual void ObtainElasticityBoundaryDOFs() {}
-
-        /** This function fills the essential BC nodes in @p ess_tdof_list_c
-         */
-        virtual void ObtainPhaseFieldBoundaryDOFs() {}
+        virtual void ObtainBoundaryDOFs() {}
 
         /** Project the analytical solution onto this specified gridfield
          * The derived class needs to have an analytical solution member function
@@ -66,49 +62,14 @@ namespace nse {
          *
          * @param fgf
          */
-        virtual void SetElasticityIC(NSEGridFields& fgf) {}
-
-        /** Project the initial conditions onto this specified gridfield (for c and psi)
-         *
-         * @param fgf
-         */
-        virtual void SetPhaseFieldIC(NSEGridFields& fgf) {}
+        virtual void SetIC(NSEGridFields& fgf) {}
 
         /** Project the Dirichlet BCs onto
          * the given gridfields. The particular gridfunction where the BCs
          * will be filled might differ from case to case
          * @param fgf
          */
-        virtual void ApplyElasticityBC(NSEGridFields &fgf) {}
-
-        /** Project the Dirichlet BCs onto
-         * the given gridfields.
-         * @param fgf
-         */
-        virtual void ApplyPhaseFieldBC(NSEGridFields &fgf) {}
-
-        /** Add the integrators for solving for the first step acceleration.
-         * @param a bilinear form (lhs)
-         * @param b linear form (rhs)
-         */
-        virtual void AddElasticityIntegratorsZeroStep(ParBilinearForm &a, ParLinearForm &b) {}
-
-        /** Add the integrators for this case.
-         * The integrators can change based on the case, the time marching algorith
-         * or other method related considerations
-         * @param a bilinear form (lhs)
-         * @param b linear form (rhs)
-         */
-        virtual void AddElasticityIntegrators(ParBilinearForm &a, ParLinearForm &b) {}
-        virtual void AddElasticityNonlinearIntegrators(ParNonlinearForm &nlf) {}
-
-        /** Add the RHS integrators for this case.
-         * The integrators can change based on the case, the time marching algorith
-         * or other method related considerations
-         * @param a bilinear form (lhs)
-         * @param b linear form (rhs)
-         */
-        virtual void AddElasticityRHSIntegrators(ParLinearForm &b) {}
+        virtual void ApplyBC(NSEGridFields &fgf) {}
 
         /** This is a helper function to set the time
          * in various FunctionCoefficients owned by an instance of ProblemCase
@@ -129,13 +90,6 @@ namespace nse {
          */
         virtual void PostStep(const double t, const double k) {}
 
-        virtual double CalculateStaggeredIterationError() {
-            return 0.;
-        }
-
         virtual void RegisterParaviewFields(ParaViewDataCollection& pvdc, ParaViewDataCollection& npvdc_q) {}
-
-        virtual void CalcElasticLoading(Operator &Mop, ParNonlinearForm & nlfK, ParLinearForm &b) {}
-        virtual void UpdateQuadratureFunctions() {}
     };
 }

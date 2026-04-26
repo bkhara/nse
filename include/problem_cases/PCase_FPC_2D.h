@@ -48,7 +48,7 @@ namespace nse {
             }
         }
 
-        void ObtainElasticityBoundaryDOFs() override {
+        void ObtainBoundaryDOFs() override {
             Array<int> bdr_attr;
             Array<int> temp;
 
@@ -92,7 +92,7 @@ namespace nse {
             outlet_marker[OUTLET - 1] = 1;
         }
 
-        void ApplyElasticityBC(NSEGridFields& fgf) override {
+        void ApplyBC(NSEGridFields& fgf) override {
             const double t = tlf.GetTime();
             const double dt = tlf.GetTimeStep();
 
@@ -195,15 +195,6 @@ namespace nse {
             ProblemCase::SetTime(t);
         }
 
-        void SetElasticityIC(NSEGridFields& fgf) override {
-        }
-
-        void SetPhaseFieldIC(NSEGridFields& fgf) override {
-        }
-
-        void AddElasticityRHSIntegrators(ParLinearForm &b) override {
-        }
-
         void PostStep(const double t, const double dt) override {
             mfem::Array<int> cylinder_marker(fem.mesh->bdr_attributes.Max());
             cylinder_marker = 0;
@@ -231,12 +222,6 @@ namespace nse {
                 std::cout << "t=" << t << ", Cd=" << Cd << ", Cl=" << Cl << "\n";
                 file.close();
             }
-        }
-
-        void UpdateQuadratureFunctions() override {
-        }
-
-        void RegisterParaviewFields(ParaViewDataCollection& pvdc, ParaViewDataCollection& pvdc_q) override {
         }
 
         DragLiftForces ComputeDragLiftOnBoundary(const mfem::Array<int>& bdr_marker,

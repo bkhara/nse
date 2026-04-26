@@ -197,7 +197,7 @@ namespace nse {
             }
         }
 
-        void ObtainElasticityBoundaryDOFs() override
+        void ObtainBoundaryDOFs() override
         {
             // this case does not have outlet
             has_outlet_bc = false;
@@ -261,12 +261,12 @@ namespace nse {
             forcing_rhs->SetTime(t);
         }
 
-        void SetElasticityIC(NSEGridFields& fgf) override {
+        void SetIC(NSEGridFields& fgf) override {
             exact_velocity.SetTime(0.);
             fgf.u.ProjectCoefficient(exact_velocity);
         }
 
-        void ApplyElasticityBC(NSEGridFields &fgf) override {
+        void ApplyBC(NSEGridFields &fgf) override {
             fgf.u.ProjectBdrCoefficient(exact_velocity, bdr_attr_u);
             // fgf.p.ProjectBdrCoefficient(exact_pressure, bdr_attr_p);
         }

@@ -143,7 +143,7 @@ namespace nse {
                 mfem::out << "NSSolver constructor\n";
             }
 
-            pcase->ObtainElasticityBoundaryDOFs();
+            pcase->ObtainBoundaryDOFs();
 
             nse_block_op = new NSEBlockOperator(fem.fespace_primal_u->GetTrueVSize() + fem.fespace_p->GetTrueVSize(),idata, fem, tlf, pcase);
             petsc_nonlinear_solver = new PetscNonlinearSolver(fem.fespace_primal_u->GetComm(), *nse_block_op,
@@ -161,7 +161,7 @@ namespace nse {
             pcase->SetTimeStep(dt);
             pcase->SetTime(t);
 
-            pcase->ApplyElasticityBC(tlf.current);
+            pcase->ApplyBC(tlf.current);
             SolveStepNonlinear();
 
             pcase->SetTime(t); // set t again because it might have been reset by the stage calls
