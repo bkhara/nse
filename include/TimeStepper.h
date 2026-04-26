@@ -9,7 +9,6 @@
 #include "FEMachinery.h"
 #include "TimeLevelFields.h"
 #include "ParallelTimer.h"
-#include "SolverNS.h"
 
 using namespace mfem;
 using std::endl;
@@ -21,6 +20,8 @@ namespace nse {
         FEMachinery &fem;
         TimeLevelFields &tlf;
         ProblemCase *pcase;
+
+        SolverNS *ns_solver = nullptr;
 
         ParaViewDataCollection pvdc;
         ParaViewDataCollection pvdc_q;
@@ -35,8 +36,8 @@ namespace nse {
         RestartMeta restart_meta;
 
     public:
-        TimeStepper(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
-            : myrank(Mpi::WorldRank()), idata(idata), fem(fem), tlf(tlf), pcase(pcase),
+        TimeStepper(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase, SolverNS *ns_solver)
+            : myrank(Mpi::WorldRank()), idata(idata), fem(fem), tlf(tlf), pcase(pcase), ns_solver(ns_solver),
               pvdc("pv", fem.mesh), pvdc_q("pvq", fem.mesh),
               t_ns(MPI_COMM_WORLD, "solve_elasticity"),
               t_pv_writer(MPI_COMM_WORLD, "pv_writer") {
@@ -56,7 +57,6 @@ namespace nse {
         }
 
         void MarchInTime() {
-            SolverNS ns_solver(idata, fem, tlf, pcase);
             double stag_ctol = idata.stag_config.etol;
             int stag_max_it = idata.stag_config.max_it;
             int staggered_iters_total = 0;
@@ -99,7 +99,7 @@ namespace nse {
                 {
                     t_ns.Start();
                     // el_solver.SolveStep(t, dt);
-                    ns_solver.SolveStep(t, dt);
+                    ns_solver->SolveStep(t, dt);
                     t_ns.Stop();
 
                     stage_timing_ns += t_ns.GetLastTimeSeconds();

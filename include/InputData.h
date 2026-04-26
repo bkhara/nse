@@ -227,6 +227,13 @@ namespace nse {
         CouplingFormulation coupling_form = FULLY_COUPLED;
         std::string stab_scheme = std::string(NSStabilizationMethod::VMS_STABILIZED);
 
+        bool is_coupled() const {
+            return coupling_form == FULLY_COUPLED;
+        }
+        bool is_uncoupled() const {
+            return coupling_form == UNCOUPLED;
+        }
+
         bool use_stab_none() const {
             return stab_scheme == NSStabilizationMethod::UNSTABILIZED;
         }

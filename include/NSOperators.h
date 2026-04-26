@@ -1,17 +1,12 @@
 //
-// Created by Biswajit Khara on 4/18/26.
+// Created by Biswajit Khara on 4/25/26.
 //
 
 #pragma once
-#include <petscsnes.h>
-
 #include "mfem.hpp"
 #include "TimeLevelFields.h"
 #include "Integrators.h"
 #include "problem_cases/ProblemCase.h"
-#include "problem_cases/PCase_Stokes_MMS_2D.h"
-
-using namespace mfem;
 
 namespace nse {
     class NSEBlockOperator : public mfem::Operator {
@@ -117,77 +112,6 @@ namespace nse {
             delete Je; // Je contains the eliminated entries; usually not needed here
 
             return *matJ;
-        }
-    };
-    class SolverNS {
-        int myrank;
-
-        InputData &idata;
-        const FEMachinery &fem;
-        TimeLevelFields &tlf;
-
-        ProblemCase *pcase;
-
-        NSEBlockOperator *nse_block_op;
-
-        Vector B, X;
-
-        PetscNonlinearSolver *petsc_nonlinear_solver;
-        SNES snes;
-
-    public:
-        SolverNS(InputData &idata, FEMachinery &fem, TimeLevelFields &tlf, ProblemCase *pcase)
-            : myrank(Mpi::WorldRank()),
-              idata(idata), fem(fem), tlf(tlf), pcase(pcase) {
-            if (myrank == 0) {
-                mfem::out << "NSSolver constructor\n";
-            }
-
-            pcase->ObtainBoundaryDOFs();
-
-            nse_block_op = new NSEBlockOperator(fem.fespace_primal_u->GetTrueVSize() + fem.fespace_p->GetTrueVSize(),idata, fem, tlf, pcase);
-            petsc_nonlinear_solver = new PetscNonlinearSolver(fem.fespace_primal_u->GetComm(), *nse_block_op,
-                                                                  std::string(nse::PetscSolverPrefix::ELASTICITY));
-            petsc_nonlinear_solver->iterative_mode = true;
-            snes = static_cast<petsc::SNES>(*petsc_nonlinear_solver);
-        }
-
-        ~SolverNS() {
-            delete petsc_nonlinear_solver;
-            delete nse_block_op;
-        }
-
-        void SolveStep(const double t, const double dt) {
-            pcase->SetTimeStep(dt);
-            pcase->SetTime(t);
-
-            pcase->ApplyBC(tlf.current);
-            SolveStepNonlinear();
-
-            pcase->SetTime(t); // set t again because it might have been reset by the stage calls
-            // pcase->ApplyElasticityBC(tlf.current); // just to make sure
-        }
-
-        void SolveStepNonlinear() const {
-            PetscInt snes_its;
-            PetscReal snes_residual;
-            SNESConvergedReason snes_converged_reason = SNES_DIVERGED_FUNCTION_DOMAIN;
-            // just using a negative value to initialize
-            {
-                Vector zerovec;
-                BlockVector xvec(nse_block_op->t_offsets);
-                tlf.current.u.GetTrueDofs(xvec.GetBlock(0));
-                tlf.current.p.GetTrueDofs(xvec.GetBlock(1));
-
-                petsc_nonlinear_solver->Mult(zerovec, xvec);
-
-                tlf.current.u.SetFromTrueDofs(xvec.GetBlock(0));
-                tlf.current.p.SetFromTrueDofs(xvec.GetBlock(1));
-                //PhaseField_ProjectBoundaryValues(tlf.current.c);
-            }
-            SNESGetIterationNumber(snes, &snes_its);
-            SNESGetConvergedReason(snes, &snes_converged_reason);
-            SNESGetFunctionNorm(snes, &snes_residual);
         }
     };
 }
