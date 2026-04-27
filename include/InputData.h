@@ -79,8 +79,10 @@ namespace nse {
         inline constexpr std::string_view SUPG_STABILIZED = "supg"; // supg
     }
     namespace PetscSolverPrefix {
-        inline constexpr std::string_view ELASTICITY = "el_";
-        inline constexpr std::string_view PHASEFIELD = "pf_";
+        inline constexpr std::string_view NS_COUPLED = "nse_";
+        inline constexpr std::string_view NS_UNCOUPLED_MOMENTUM = "mom_";
+        inline constexpr std::string_view NS_UNCOUPLED_PPE = "ppe_";
+        inline constexpr std::string_view NS_UNCOUPLED_VUE = "vue_";
     }
     namespace TimeDependenceType {
         inline constexpr std::string_view QUASISTATIC = "qs";

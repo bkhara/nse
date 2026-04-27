@@ -51,7 +51,7 @@ namespace nse {
 
             nse_block_op = new NSEBlockOperator(fem.fespace_primal_u->GetTrueVSize() + fem.fespace_p->GetTrueVSize(),idata, fem, tlf, pcase);
             petsc_nonlinear_solver = new PetscNonlinearSolver(fem.fespace_primal_u->GetComm(), *nse_block_op,
-                                                                  std::string(nse::PetscSolverPrefix::ELASTICITY));
+                                                                  std::string(nse::PetscSolverPrefix::NS_COUPLED));
             petsc_nonlinear_solver->iterative_mode = true;
             snes = static_cast<petsc::SNES>(*petsc_nonlinear_solver);
         }
@@ -135,33 +135,38 @@ namespace nse {
                 mfem::out << "NSSolverUncoupled constructor\n";
             }
 
-            // velocity prediction setup
-            vel_pred_op =
-                new NSEProjectionVelocityPredictorOperator(
-                    idata, fem, tlf, pcase, scheme);
+            // set up operators for (nonlinear) Momentum
+            {
+                vel_pred_op =
+                   new NSEProjectionVelocityPredictorOperator(
+                       idata, fem, tlf, pcase, scheme);
 
-            vel_pred_solver =
-                new mfem::PetscNonlinearSolver(
-                    fem.fespace_primal_u->GetComm(),
-                    *vel_pred_op,
-                    std::string("mo_"));
-            vel_pred_solver->iterative_mode = true;
+                const std::string mom_prefix(PetscSolverPrefix::NS_UNCOUPLED_MOMENTUM);
+                vel_pred_solver =
+                    new mfem::PetscNonlinearSolver(
+                        fem.fespace_primal_u->GetComm(),
+                        *vel_pred_op,
+                        mom_prefix);
+                vel_pred_solver->iterative_mode = true;
+            }
 
             // set up operators for PPE
-            A_ppe.AddDomainIntegrator(new mfem::DiffusionIntegrator);
-            A_ppe.Assemble();
-            A_ppe.Finalize();
+            {
+                A_ppe.AddDomainIntegrator(new mfem::DiffusionIntegrator);
+                A_ppe.Assemble();
+                A_ppe.Finalize();
 
-            B_ppe.AddDomainIntegrator(new NSEProjPPERHSInteg(idata, tlf, scheme, fem.el_vdim, pcase->forcing_rhs));
+                B_ppe.AddDomainIntegrator(new NSEProjPPERHSInteg(idata, tlf, scheme, fem.el_vdim, pcase->forcing_rhs));
+            }
 
             // set up operators for VUE
-            A_vue.AddDomainIntegrator(new mfem::VectorMassIntegrator);
-            A_vue.Assemble();
-            A_vue.Finalize();
+            {
+                A_vue.AddDomainIntegrator(new mfem::VectorMassIntegrator);
+                A_vue.Assemble();
+                A_vue.Finalize();
 
-            B_vue.AddDomainIntegrator(
-                new NSEProjVUERHSInteg(idata, tlf, scheme, fem.el_vdim, fem.ordering, pcase->forcing_rhs)
-            );
+                B_vue.AddDomainIntegrator(new NSEProjVUERHSInteg(idata, tlf, scheme, fem.el_vdim, fem.ordering, pcase->forcing_rhs));
+            }
         }
 
         ~NSSolverUncoupled() override {
@@ -220,48 +225,40 @@ namespace nse {
 
             A_ppe.FormLinearSystem(pcase->ess_tdof_list_p, tlf.current.p, B_ppe, A, X, B);
 
-            mfem::HypreBoomerAMG amg(A);
-            mfem::CGSolver cg(A.GetComm());
+            // mfem::HypreBoomerAMG amg(A);
+            // mfem::CGSolver cg(A.GetComm());
+            //
+            // cg.SetRelTol(1.0e-12);
+            // cg.SetAbsTol(1.0e-14);
+            // cg.SetMaxIter(500);
+            // cg.SetPrintLevel(0);
+            // cg.SetPreconditioner(amg);
+            // cg.SetOperator(A);
+            //
+            // cg.Mult(B, X);
 
-            cg.SetRelTol(1.0e-12);
-            cg.SetAbsTol(1.0e-14);
-            cg.SetMaxIter(500);
-            cg.SetPrintLevel(0);
-            cg.SetPreconditioner(amg);
-            cg.SetOperator(A);
+            const std::string prefix(PetscSolverPrefix::NS_UNCOUPLED_PPE);
+            mfem::PetscLinearSolver ksp(A, false, prefix);
 
-            cg.Mult(B, X);
+            ksp.Mult(B, X);
 
             A_ppe.RecoverFEMSolution(X, B_ppe, tlf.current.p);
         }
 
         void CorrectVelocity(const double alpha) {
-            Array<int> empty;
+            mfem::Array<int> empty;
 
             B_vue.Assemble();
 
             mfem::HypreParMatrix A;
             mfem::Vector X, B;
 
-            A_vue.FormLinearSystem(
-                empty,
-                tlf.current.u,
-                B_vue,
-                A,
-                X,
-                B);
+            A_vue.FormLinearSystem(empty, tlf.current.u, B_vue, A, X, B);
 
-            mfem::CGSolver cg(A.GetComm());
-            mfem::HypreSmoother jacobi(A, mfem::HypreSmoother::Jacobi);
+            const std::string prefix(PetscSolverPrefix::NS_UNCOUPLED_VUE);
+            mfem::PetscLinearSolver ksp(A, false, prefix);
 
-            cg.SetRelTol(1.0e-12);
-            cg.SetAbsTol(1.0e-14);
-            cg.SetMaxIter(200);
-            cg.SetPrintLevel(0);
-            cg.SetPreconditioner(jacobi);
-            cg.SetOperator(A);
-
-            cg.Mult(B, X);
+            ksp.Mult(B, X);
 
             A_vue.RecoverFEMSolution(X, B_vue, tlf.current.u_corrected);
         }
