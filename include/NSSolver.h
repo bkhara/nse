@@ -103,7 +103,7 @@ namespace nse {
         TimeLevelFields& tlf;
         ProblemCase* pcase;
 
-        ProjectionScheme scheme;
+        ProjectionScheme &scheme;
 
         NSEProjectionVelocityPredictorOperator* vel_pred_op = nullptr;
         mfem::PetscNonlinearSolver* vel_pred_solver = nullptr;

@@ -121,7 +121,7 @@ namespace nse {
         FEMachinery& femach;
         TimeLevelFields& tlf;
         ProblemCase* pcase;
-        ProjectionScheme scheme;
+        ProjectionScheme& scheme;
 
         mfem::ParNonlinearForm* nlf = nullptr;
         mutable mfem::PetscParMatrix* matJ = nullptr;
@@ -134,7 +134,7 @@ namespace nse {
             FEMachinery& femach,
             TimeLevelFields& tlf,
             ProblemCase* pcase,
-            ProjectionScheme scheme)
+            ProjectionScheme& scheme)
             : mfem::Operator(femach.fespace_primal_u->GetTrueVSize()),
               idata(idata),
               femach(femach),

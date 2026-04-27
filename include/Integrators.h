@@ -1737,7 +1737,7 @@ namespace nse {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
-        const ProjectionScheme scheme;
+        const ProjectionScheme& scheme;
         const int vdim;
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
@@ -1757,7 +1757,7 @@ namespace nse {
         NSEProjMomentumVMSInteg(
             const InputData& idata,
             const TimeLevelFields& tlf,
-            const ProjectionScheme scheme,
+            const ProjectionScheme& scheme,
             const int vdim,
             const mfem::Ordering::Type ordering,
             mfem::VectorCoefficient* f_coeff = nullptr)
@@ -2363,7 +2363,7 @@ namespace nse {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
-        const ProjectionScheme scheme;
+        const ProjectionScheme& scheme;
         const int vdim;
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
@@ -2374,7 +2374,7 @@ namespace nse {
         NSEProjVUERHSInteg(
             const InputData& idata,
             const TimeLevelFields& tlf,
-            const ProjectionScheme scheme,
+            const ProjectionScheme& scheme,
             const int vdim,
             const mfem::Ordering::Type ordering,
             mfem::VectorCoefficient* f_coeff = nullptr)
@@ -2523,7 +2523,7 @@ namespace nse {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
-        const ProjectionScheme scheme;
+        const ProjectionScheme& scheme;
         const int vdim;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
@@ -2533,7 +2533,7 @@ namespace nse {
         NSEProjPPERHSInteg(
             const InputData& idata,
             const TimeLevelFields& tlf,
-            const ProjectionScheme scheme,
+            const ProjectionScheme& scheme,
             const int vdim,
             mfem::VectorCoefficient* f_coeff = nullptr)
             : idata(idata),
