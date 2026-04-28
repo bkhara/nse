@@ -1,4 +1,4 @@
-# 0: aps2d, 1: aps3d, 100: beam2d, 101: mms2d, 102: nshear
+# 301: mms2d, 302: fpc2d
 pcase = 301;
 
 checkpointing_inputs = {
@@ -17,7 +17,7 @@ mesh_config = {
     nels = [12,12,12]
 }
 
-el_vdim = 2
+vel_vdim = 2
 
 fe_primal = {
     order = 2
@@ -44,8 +44,13 @@ time_marching = {
 Re = 1.0;
 disable_convection = false;
 method_config = {
-    stab_scheme = "none"; # none or vms
+    stab_scheme = "sups"; # none or vms or sups
     coupling_form = 0; # 0: coupled, 1: uncoupled
+}
+
+sups_config = {
+    use_supg = true;
+    use_pspg = true;
 }
 
 mms2d_inputs = {

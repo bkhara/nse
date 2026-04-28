@@ -18,7 +18,7 @@ mesh_config = {
     nels = [12,12,12]
 }
 
-el_vdim = 2
+vel_vdim = 2
 
 fe_primal = {
     order = 2
@@ -45,8 +45,13 @@ time_marching = {
 Re = 1.0;
 disable_convection = false;
 method_config = {
-    stab_scheme = "none"; # none or vms
+    stab_scheme = "sups"; # none or vms or sups
     coupling_form = 0; # 0: coupled, 1: uncoupled
+}
+
+sups_config = {
+    use_supg = true;
+    use_pspg = true;
 }
 
 fpc2d_inputs = {

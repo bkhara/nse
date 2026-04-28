@@ -25,14 +25,14 @@ namespace nse {
 
         NSEBlockOperator(int operator_size,
                             InputData &idata,
-                            FEMachinery &femach,
+                            FEMachinery &fem,
                             TimeLevelFields &tlf,
                             ProblemCase *pcase)
             : mfem::Operator(operator_size),
-              idata(idata), femach(femach), tlf(tlf), pcase(pcase), t_offsets(3) {
+              idata(idata), femach(fem), tlf(tlf), pcase(pcase), t_offsets(3) {
             t_offsets[0] = 0;
-            t_offsets[1] = femach.fespace_primal_u->GetTrueVSize();
-            t_offsets[2] = femach.fespace_p->GetTrueVSize();
+            t_offsets[1] = fem.fespace_primal_u->GetTrueVSize();
+            t_offsets[2] = fem.fespace_p->GetTrueVSize();
             t_offsets.PartialSum();
 
             // set up the tdof lists
@@ -50,16 +50,23 @@ namespace nse {
                 }
             }
 
-            bnlf = new mfem::ParBlockNonlinearForm(femach.fespace_block_up);
-            bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2(idata, tlf, 2, femach.ordering, pcase->forcing_rhs));
+            bnlf = new mfem::ParBlockNonlinearForm(fem.fespace_block_up);
+            bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
             if (pcase->has_outlet_bc) {
                 bnlf->AddBdrFaceIntegrator(
-                    new NSEBlockIntegBDF2OutletConvectiveFlux(idata, tlf, 2, femach.ordering, nullptr),
+                    new NSEBlockIntegBDF2OutletConvectiveFlux(idata, tlf, fem.vel_vdim, fem.ordering, nullptr),
                     pcase->outlet_marker
                     );
             }
             if (idata.method_config.use_stab_vms()) {
-                bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2VMSConservative(idata, tlf, 2, femach.ordering, pcase->forcing_rhs));
+                bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2VMSConservative(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+            } else if (idata.method_config.use_stab_sups()) {
+                if (idata.sups_config.use_supg) {
+                    bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2SUPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                }
+                if (idata.sups_config.use_pspg) {
+                    bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2PSPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                }
             }
         }
 
@@ -150,7 +157,7 @@ namespace nse {
                     idata,
                     tlf,
                     scheme,
-                    femach.el_vdim,
+                    femach.vel_vdim,
                     femach.ordering,
                     pcase->forcing_rhs));
         }

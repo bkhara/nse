@@ -30,7 +30,7 @@ namespace nse {
 
         Ordering::Type ordering = Ordering::byVDIM;
 
-        int el_vdim = 1;
+        int vel_vdim = 2;
 
         explicit FEMachinery(InputData& idata);
 

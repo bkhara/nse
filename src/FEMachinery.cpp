@@ -7,12 +7,12 @@
 #include "Checkpointing.h"
 
 namespace nse {
-    FEMachinery::FEMachinery(InputData &idata): idata(idata), el_vdim(idata.el_vdim), fespace_block_cpsi(2), fespace_block_up(2) {
+    FEMachinery::FEMachinery(InputData &idata): idata(idata), vel_vdim(idata.vel_vdim), fespace_block_cpsi(2), fespace_block_up(2) {
         SetUpMesh();
         if (mesh->Dimension() > 2) {
-            el_vdim = mesh->Dimension();
+            vel_vdim = mesh->Dimension();
             if (!Mpi::WorldRank()) {
-                mfem::out << "[WARNING] (el_vdim) Ignoring config value (=" << idata.el_vdim << "). Changed to " << el_vdim << std::endl;
+                mfem::out << "[WARNING] (el_vdim) Ignoring config value (=" << idata.vel_vdim << "). Changed to " << vel_vdim << std::endl;
             }
         }
         SetUpFESpaces();
@@ -115,7 +115,7 @@ namespace nse {
             fec_latent = new L2_FECollection(idata.fes_config_latent.order, mesh->Dimension());
         }
 
-        fespace_primal_u = new ParFiniteElementSpace(mesh, fec_primal, el_vdim, ordering);
+        fespace_primal_u = new ParFiniteElementSpace(mesh, fec_primal, vel_vdim, ordering);
         fespace_primal_c = new ParFiniteElementSpace(mesh, fec_primal);
         fespace_latent = new ParFiniteElementSpace(mesh, fec_latent);
         fespace_p = new ParFiniteElementSpace(mesh, fec_latent);

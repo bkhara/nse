@@ -77,6 +77,8 @@ namespace nse {
         inline constexpr std::string_view UNSTABILIZED = "none"; // plain NSE without any modification
         inline constexpr std::string_view VMS_STABILIZED = "vms"; // vms for velocity (and / or pressure)
         inline constexpr std::string_view SUPG_STABILIZED = "supg"; // supg
+        inline constexpr std::string_view PSPG_STABILIZED = "pspg"; // pspg
+        inline constexpr std::string_view SUPG_PSPG_STABILIZED = "sups"; // sups
     }
     namespace PetscSolverPrefix {
         inline constexpr std::string_view NS_COUPLED = "nse_";
@@ -114,6 +116,16 @@ namespace nse {
 
     struct VMSConfig {
         double Ci = 36.0;
+    };
+
+    struct SUPSConfig {
+        bool use_supg = true;
+        bool use_pspg = true;
+        void ReadFromFile(InputReader &reader) {
+            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading SUPSConfig\n"; }
+            reader.ReadValue("sups_config.use_supg", use_supg);
+            reader.ReadValue("sups_config.use_pspg", use_pspg);
+        }
     };
 
     static const char *NormToString(Norm n) {
@@ -248,7 +260,7 @@ namespace nse {
     };
     struct MethodConfig {
         CouplingFormulation coupling_form = FULLY_COUPLED;
-        std::string stab_scheme = std::string(NSStabilizationMethod::VMS_STABILIZED);
+        std::string stab_scheme = std::string(NSStabilizationMethod::SUPG_PSPG_STABILIZED);
 
         bool is_coupled() const {
             return coupling_form == FULLY_COUPLED;
@@ -263,8 +275,8 @@ namespace nse {
         bool use_stab_vms() const {
             return stab_scheme == NSStabilizationMethod::VMS_STABILIZED;
         }
-        bool use_stab_supg() const {
-            return stab_scheme == NSStabilizationMethod::SUPG_STABILIZED;
+        bool use_stab_sups() const {
+            return stab_scheme == NSStabilizationMethod::SUPG_PSPG_STABILIZED;
         }
 
         void ReadFromFile(InputReader &reader) {
@@ -755,7 +767,7 @@ namespace nse {
         FESpaceConfig fes_config_primal;
         FESpaceConfig fes_config_latent;
         int file_write_freq = 2;
-        int el_vdim = 1;
+        int vel_vdim = 2;
 
         ProblemCaseConfig pcase_config;
         FlowPropertiesInputs flow_properties;
@@ -768,6 +780,7 @@ namespace nse {
         MethodConfig method_config;
         ProjectionConfig projection_config;
         VMSConfig vms_config;
+        SUPSConfig sups_config;
 
         RefinementConfig ref_config;
         StaggeredIterationConfig stag_config;
@@ -783,7 +796,7 @@ namespace nse {
             conf.load(cfg_filename);
             reader.ReadConfigFile(cfg_filename);
 
-            reader.ReadValue("el_vdim", el_vdim);
+            reader.ReadValue("vel_vdim", vel_vdim);
             reader.ReadValue("fe_primal.space", fes_config_primal.space);
             reader.ReadValue("fe_primal.order", fes_config_primal.order);
             reader.ReadValue("fe_latent.space", fes_config_latent.space);
@@ -799,6 +812,7 @@ namespace nse {
             mms2d_inputs.ReadFromFile(reader);
             fpc2d_inputs.ReadFromFile(reader);
             method_config.ReadFromFile(reader);
+            sups_config.ReadFromFile(reader);
         }
     };
 }

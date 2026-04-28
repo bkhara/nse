@@ -758,6 +758,606 @@ namespace nse {
         }
     };
 
+    class NSEBlockIntegBDF2SUPGConservativeAddOn
+        : public NSEIntegratorBase {
+    public:
+        NSEBlockIntegBDF2SUPGConservativeAddOn(
+            const InputData& idata,
+            const TimeLevelFields& tlf,
+            const int vdim,
+            const mfem::Ordering::Type ordering,
+            mfem::VectorCoefficient* f_coeff = nullptr)
+            : NSEIntegratorBase(idata, tlf, vdim, ordering, f_coeff) {
+        }
+
+        void AssembleElementVector(
+            const mfem::Array<const mfem::FiniteElement*>& el,
+            mfem::ElementTransformation& T,
+            const mfem::Array<const mfem::Vector*>& elfun,
+            const mfem::Array<mfem::Vector*>& elvec) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
+
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec[0]->SetSize(vdim * ndof_u);
+            *elvec[0] = 0.0;
+
+            elvec[1]->SetSize(ndof_p);
+            *elvec[1] = 0.0;
+
+            const mfem::Vector& eu = *elfun[0];
+            const mfem::Vector& ep = *elfun[1];
+
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
+            mfem::DenseMatrix dNp(ndof_p, dim);
+
+            mfem::Vector u(vdim), u_nm1(vdim), u_nm2(vdim), f(vdim);
+            mfem::Vector conv(vdim), RM(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double ctime = tlf.GetTime();
+            const double dt = tlf.GetTimeStep();
+            const double nu = idata.flow_properties.nu;
+            const double alpha = 3.0 / (2.0 * dt);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el_u.CalcShape(ip, Nu);
+                el_u.CalcPhysDShape(T, dNu);
+
+                el_p.CalcShape(ip, Np);
+                el_p.CalcPhysDShape(T, dNp);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u);
+
+                tlf.prev_1.u.GetVectorValue(T, ip, u_nm1);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm2);
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+                if (!idata.flow_properties.disable_convection) {
+                    EvalConvection(u, grad_u, conv);
+                }
+
+                double tauM = 0.0;
+                double tauC_unused = 0.0;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+
+                // Conservative strong momentum residual for SUPG:
+                //
+                // R_M =
+                //   alpha u^{n+1}
+                // - (4u^n - u^{n-1})/(2dt)
+                // + div(u^{n+1} tensor u^{n+1})
+                // + grad p^{n+1}
+                // - f^{n+1}
+                //
+                // with
+                //
+                // div(u tensor u)_c = (u . grad) u_c + u_c div(u).
+                //
+                // We omit -nu Delta u to avoid requiring second derivatives.
+                RM.SetSize(vdim);
+                RM = 0.0;
+
+                for (int c = 0; c < vdim; c++) {
+                    RM(c) += alpha * u(c);
+                    RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
+
+                    if (!idata.flow_properties.disable_convection) {
+                        RM(c) += conv(c);
+                        RM(c) += u(c) * div_u;
+                    }
+
+                    for (int b = 0; b < ndof_p; b++) {
+                        RM(c) += ep(b) * dNp(b, c);
+                    }
+
+                    RM(c) += -f(c);
+                }
+
+                // SUPG contribution to the momentum equation:
+                //
+                // tauM (R_M, u . grad v)
+                for (int a = 0; a < ndof_u; a++) {
+                    double u_dot_grad_Na = 0.0;
+                    for (int j = 0; j < dim; j++) {
+                        u_dot_grad_Na += u(j) * dNu(a, j);
+                    }
+
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+
+                        (*elvec[0])(ia) +=
+                            tauM * u_dot_grad_Na * RM(c) * wdet;
+                    }
+                }
+
+                // elvec[1] intentionally remains zero.
+            }
+        }
+
+        void AssembleElementGrad(
+            const mfem::Array<const mfem::FiniteElement*>& el,
+            mfem::ElementTransformation& T,
+            const mfem::Array<const mfem::Vector*>& elfun,
+            const mfem::Array2D<mfem::DenseMatrix*>& elmat) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
+
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elmat(0, 0)->SetSize(vdim * ndof_u, vdim * ndof_u);
+            *elmat(0, 0) = 0.0;
+
+            elmat(0, 1)->SetSize(vdim * ndof_u, ndof_p);
+            *elmat(0, 1) = 0.0;
+
+            elmat(1, 0)->SetSize(ndof_p, vdim * ndof_u);
+            *elmat(1, 0) = 0.0;
+
+            elmat(1, 1)->SetSize(ndof_p, ndof_p);
+            *elmat(1, 1) = 0.0;
+
+            mfem::DenseMatrix& Auu = *elmat(0, 0);
+            mfem::DenseMatrix& Aup = *elmat(0, 1);
+
+            const mfem::Vector& eu = *elfun[0];
+            const mfem::Vector& ep = *elfun[1];
+
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
+            mfem::DenseMatrix dNp(ndof_p, dim);
+
+            mfem::Vector u(vdim), u_nm1(vdim), u_nm2(vdim), f(vdim);
+            mfem::Vector conv(vdim), RM(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double ctime = tlf.GetTime();
+            const double dt = tlf.GetTimeStep();
+            const double nu = idata.flow_properties.nu;
+            const double alpha = 3.0 / (2.0 * dt);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el_u.CalcShape(ip, Nu);
+                el_u.CalcPhysDShape(T, dNu);
+
+                el_p.CalcShape(ip, Np);
+                el_p.CalcPhysDShape(T, dNp);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u);
+
+                tlf.prev_1.u.GetVectorValue(T, ip, u_nm1);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm2);
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+                if (!idata.flow_properties.disable_convection) {
+                    EvalConvection(u, grad_u, conv);
+                }
+
+                double tauM = 0.0;
+                double tauC_unused = 0.0;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+
+                RM.SetSize(vdim);
+                RM = 0.0;
+
+                for (int c = 0; c < vdim; c++) {
+                    RM(c) += alpha * u(c);
+                    RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
+
+                    if (!idata.flow_properties.disable_convection) {
+                        RM(c) += conv(c);
+                        RM(c) += u(c) * div_u;
+                    }
+
+                    for (int b = 0; b < ndof_p; b++) {
+                        RM(c) += ep(b) * dNp(b, c);
+                    }
+
+                    RM(c) += -f(c);
+                }
+
+                for (int a = 0; a < ndof_u; a++) {
+                    double u_dot_grad_Na = 0.0;
+                    for (int j = 0; j < dim; j++) {
+                        u_dot_grad_Na += u(j) * dNu(a, j);
+                    }
+
+                    for (int b = 0; b < ndof_u; b++) {
+                        double u_dot_grad_Nb = 0.0;
+                        for (int j = 0; j < dim; j++) {
+                            u_dot_grad_Nb += u(j) * dNu(b, j);
+                        }
+
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof_u, vdim, b, k, ordering);
+
+                                double dRM_du = 0.0;
+
+                                if (c == k) {
+                                    dRM_du += alpha * Nu(b);
+                                }
+
+                                if (!idata.flow_properties.disable_convection) {
+                                    // d[(u . grad) u_c]
+                                    dRM_du += Nu(b) * grad_u(c, k);
+
+                                    if (c == k) {
+                                        dRM_du += u_dot_grad_Nb;
+                                    }
+
+                                    // d[u_c div(u)]
+                                    if (c == k) {
+                                        dRM_du += Nu(b) * div_u;
+                                    }
+
+                                    dRM_du += u(c) * dNu(b, k);
+                                }
+
+                                // tauM (dR_c, u . grad v_c)
+                                Auu(ia, ib) +=
+                                    tauM * u_dot_grad_Na * dRM_du * wdet;
+
+                                // derivative of u . grad(v_c)
+                                if (!idata.flow_properties.disable_convection) {
+                                    Auu(ia, ib) +=
+                                        tauM * RM(c) * Nu(b) * dNu(a, k) * wdet;
+                                }
+                            }
+                        }
+                    }
+
+                    // pressure derivative:
+                    //
+                    // tauM (grad dp, u . grad v)
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+
+                        for (int b = 0; b < ndof_p; b++) {
+                            Aup(ia, b) +=
+                                tauM * u_dot_grad_Na * dNp(b, c) * wdet;
+                        }
+                    }
+                }
+
+                // Apu and App intentionally remain zero for SUPG-only integrator.
+            }
+        }
+    };
+
+    class NSEBlockIntegBDF2PSPGConservativeAddOn
+        : public NSEIntegratorBase {
+    public:
+        NSEBlockIntegBDF2PSPGConservativeAddOn(
+            const InputData& idata,
+            const TimeLevelFields& tlf,
+            const int vdim,
+            const mfem::Ordering::Type ordering,
+            mfem::VectorCoefficient* f_coeff = nullptr)
+            : NSEIntegratorBase(idata, tlf, vdim, ordering, f_coeff) {
+        }
+
+        void AssembleElementVector(
+            const mfem::Array<const mfem::FiniteElement*>& el,
+            mfem::ElementTransformation& T,
+            const mfem::Array<const mfem::Vector*>& elfun,
+            const mfem::Array<mfem::Vector*>& elvec) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
+
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec[0]->SetSize(vdim * ndof_u);
+            *elvec[0] = 0.0;
+
+            elvec[1]->SetSize(ndof_p);
+            *elvec[1] = 0.0;
+
+            const mfem::Vector& eu = *elfun[0];
+            const mfem::Vector& ep = *elfun[1];
+
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
+            mfem::DenseMatrix dNp(ndof_p, dim);
+
+            mfem::Vector u(vdim), u_nm1(vdim), u_nm2(vdim), f(vdim);
+            mfem::Vector conv(vdim), RM(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double ctime = tlf.GetTime();
+            const double dt = tlf.GetTimeStep();
+            const double nu = idata.flow_properties.nu;
+            const double alpha = 3.0 / (2.0 * dt);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el_u.CalcShape(ip, Nu);
+                el_u.CalcPhysDShape(T, dNu);
+
+                el_p.CalcShape(ip, Np);
+                el_p.CalcPhysDShape(T, dNp);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u);
+
+                tlf.prev_1.u.GetVectorValue(T, ip, u_nm1);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm2);
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+                if (!idata.flow_properties.disable_convection) {
+                    EvalConvection(u, grad_u, conv);
+                }
+
+                double tauM = 0.0;
+                double tauC_unused = 0.0;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+
+                RM.SetSize(vdim);
+                RM = 0.0;
+
+                for (int c = 0; c < vdim; c++) {
+                    RM(c) += alpha * u(c);
+                    RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
+
+                    if (!idata.flow_properties.disable_convection) {
+                        RM(c) += conv(c);
+                        RM(c) += u(c) * div_u;
+                    }
+
+                    for (int b = 0; b < ndof_p; b++) {
+                        RM(c) += ep(b) * dNp(b, c);
+                    }
+
+                    RM(c) += -f(c);
+                }
+
+                // PSPG contribution to the pressure/continuity equation:
+                //
+                // tauM (R_M, grad q)
+                for (int a = 0; a < ndof_p; a++) {
+                    for (int c = 0; c < vdim; c++) {
+                        (*elvec[1])(a) +=
+                            tauM * dNp(a, c) * RM(c) * wdet;
+                    }
+                }
+
+                // elvec[0] intentionally remains zero.
+            }
+        }
+
+        void AssembleElementGrad(
+            const mfem::Array<const mfem::FiniteElement*>& el,
+            mfem::ElementTransformation& T,
+            const mfem::Array<const mfem::Vector*>& elfun,
+            const mfem::Array2D<mfem::DenseMatrix*>& elmat) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
+
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elmat(0, 0)->SetSize(vdim * ndof_u, vdim * ndof_u);
+            *elmat(0, 0) = 0.0;
+
+            elmat(0, 1)->SetSize(vdim * ndof_u, ndof_p);
+            *elmat(0, 1) = 0.0;
+
+            elmat(1, 0)->SetSize(ndof_p, vdim * ndof_u);
+            *elmat(1, 0) = 0.0;
+
+            elmat(1, 1)->SetSize(ndof_p, ndof_p);
+            *elmat(1, 1) = 0.0;
+
+            mfem::DenseMatrix& Apu = *elmat(1, 0);
+            mfem::DenseMatrix& App = *elmat(1, 1);
+
+            const mfem::Vector& eu = *elfun[0];
+            const mfem::Vector& ep = *elfun[1];
+
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
+            mfem::DenseMatrix dNp(ndof_p, dim);
+
+            mfem::Vector u(vdim), u_nm1(vdim), u_nm2(vdim), f(vdim);
+            mfem::Vector conv(vdim), RM(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double ctime = tlf.GetTime();
+            const double dt = tlf.GetTimeStep();
+            const double nu = idata.flow_properties.nu;
+            const double alpha = 3.0 / (2.0 * dt);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el_u.CalcShape(ip, Nu);
+                el_u.CalcPhysDShape(T, dNu);
+
+                el_p.CalcShape(ip, Np);
+                el_p.CalcPhysDShape(T, dNp);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u);
+
+                tlf.prev_1.u.GetVectorValue(T, ip, u_nm1);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm2);
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+                if (!idata.flow_properties.disable_convection) {
+                    EvalConvection(u, grad_u, conv);
+                }
+
+                double tauM = 0.0;
+                double tauC_unused = 0.0;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+
+                RM.SetSize(vdim);
+                RM = 0.0;
+
+                for (int c = 0; c < vdim; c++) {
+                    RM(c) += alpha * u(c);
+                    RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
+
+                    if (!idata.flow_properties.disable_convection) {
+                        RM(c) += conv(c);
+                        RM(c) += u(c) * div_u;
+                    }
+
+                    for (int b = 0; b < ndof_p; b++) {
+                        RM(c) += ep(b) * dNp(b, c);
+                    }
+
+                    RM(c) += -f(c);
+                }
+
+                // Apu from PSPG:
+                //
+                // tauM (dR_M/du, grad q)
+                for (int a = 0; a < ndof_p; a++) {
+                    for (int b = 0; b < ndof_u; b++) {
+                        double u_dot_grad_Nb = 0.0;
+                        for (int j = 0; j < dim; j++) {
+                            u_dot_grad_Nb += u(j) * dNu(b, j);
+                        }
+
+                        for (int c = 0; c < vdim; c++) {
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof_u, vdim, b, k, ordering);
+
+                                double dRM_du = 0.0;
+
+                                if (c == k) {
+                                    dRM_du += alpha * Nu(b);
+                                }
+
+                                if (!idata.flow_properties.disable_convection) {
+                                    // d[(u . grad) u_c]
+                                    dRM_du += Nu(b) * grad_u(c, k);
+
+                                    if (c == k) {
+                                        dRM_du += u_dot_grad_Nb;
+                                    }
+
+                                    // d[u_c div(u)]
+                                    if (c == k) {
+                                        dRM_du += Nu(b) * div_u;
+                                    }
+
+                                    dRM_du += u(c) * dNu(b, k);
+                                }
+
+                                Apu(a, ib) +=
+                                    tauM * dNp(a, c) * dRM_du * wdet;
+                            }
+                        }
+                    }
+
+                    // App from PSPG:
+                    //
+                    // tauM (grad dp, grad q)
+                    for (int b = 0; b < ndof_p; b++) {
+                        for (int c = 0; c < vdim; c++) {
+                            App(a, b) +=
+                                tauM * dNp(a, c) * dNp(b, c) * wdet;
+                        }
+                    }
+                }
+
+                // Auu and Aup intentionally remain zero for PSPG-only integrator.
+            }
+        }
+    };
+
     class NSEBlockIntegBDF2VMSConservative : public NSEIntegratorBase {
     private:
         static double Dot(const mfem::Vector &a, const mfem::Vector &b) {

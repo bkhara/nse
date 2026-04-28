@@ -156,7 +156,7 @@ namespace nse {
                 A_ppe.Assemble();
                 A_ppe.Finalize();
 
-                B_ppe.AddDomainIntegrator(new NSEProjPPERHSInteg(idata, tlf, scheme, fem.el_vdim, pcase->forcing_rhs));
+                B_ppe.AddDomainIntegrator(new NSEProjPPERHSInteg(idata, tlf, scheme, fem.vel_vdim, pcase->forcing_rhs));
             }
 
             // set up operators for VUE
@@ -165,7 +165,7 @@ namespace nse {
                 A_vue.Assemble();
                 A_vue.Finalize();
 
-                B_vue.AddDomainIntegrator(new NSEProjVUERHSInteg(idata, tlf, scheme, fem.el_vdim, fem.ordering, pcase->forcing_rhs));
+                B_vue.AddDomainIntegrator(new NSEProjVUERHSInteg(idata, tlf, scheme, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
             }
         }
 
