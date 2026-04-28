@@ -190,7 +190,7 @@ namespace nse {
                 mfem::Vector rhs; //(fem.fespace_primal_u->GetTrueVSize());
                 // rhs = 0.0;
 
-                mfem::Vector x;
+                mfem::Vector x(fem.fespace_primal_u->GetTrueVSize());
                 tlf.current.u.GetTrueDofs(x);
 
                 vel_pred_solver->Mult(rhs, x);

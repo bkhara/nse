@@ -72,11 +72,7 @@ namespace nse {
                     std::cout << "Starting values: dt=" << dt << ", step_0=" << n << ", t_0=" << t << "\n";
                 }
             }
-            if (n == 0) {
-                idata.projection_config.scheme = ProjectionScheme::ChorinFirstOrder;
-            } else {
-                idata.projection_config.scheme = ProjectionScheme::IncPressureBDF2;
-            }
+
             bool is_last_step = false;
             while (t < idata.time_marching.t_max) {
                 double time_remaining = (idata.time_marching.t_max - t);
@@ -84,6 +80,12 @@ namespace nse {
                     dt = time_remaining;
                     is_last_step = true;
                     if (!myrank) mfem::out << "dt = " << dt << ". This will be the last step\n";
+                }
+
+                if (n == 0) {
+                    idata.projection_config.scheme = ProjectionScheme::ChorinFirstOrder;
+                } else {
+                    idata.projection_config.scheme = ProjectionScheme::IncPressureBDF2;
                 }
 
                 n += 1;
