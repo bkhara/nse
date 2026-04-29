@@ -1,0 +1,29 @@
+-nse_ksp_type preonly
+-nse_pc_type lu
+-nse_ksp_converged_reason
+-nse_snes_monitor
+-nse_snes_converged_reason
+-nse_snes_rtol 1e-6
+-nse_snes_atol 1e-6
+
+-mom_ksp_type preonly
+-mom_pc_type lu
+-mom_ksp_converged_reason
+-mom_snes_monitor
+-mom_snes_converged_reason
+-mom_snes_rtol 1e-6
+-mom_snes_atol 1e-6
+
+-ppe_ksp_type cg
+-ppe_pc_type gamg
+-ppe_ksp_rtol 1e-12
+-ppe_ksp_atol 1e-14
+-ppe_ksp_max_it 500
+-ppe_ksp_converged_reason
+
+-vue_ksp_type cg
+-vue_pc_type jacobi
+-vue_ksp_rtol 1e-12
+-vue_ksp_atol 1e-14
+-vue_ksp_max_it 200
+-vue_ksp_converged_reason

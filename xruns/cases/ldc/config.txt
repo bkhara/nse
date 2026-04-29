@@ -1,5 +1,5 @@
-# 301: mms2d, 302: fpc2d
-pcase = 301;
+# 101: mms2d, 201: ldc2d, 301: fpc2d
+pcase = 201;
 
 checkpointing_inputs = {
     # in
@@ -11,7 +11,10 @@ checkpointing_inputs = {
 }
 
 mesh_config = {
-    use_external_mesh = false;
+    use_external_mesh = true;
+    mesh_file = "ldc_quad_bump.msh";
+    # mesh_file = "ldc_tri_str.msh";
+    # mesh_file = "ldc_tri_uns.msh";
     nsd = 2;
     lengths = [1.,1.,3.]
     nels = [12,12,12]
@@ -28,12 +31,12 @@ fe_latent = {
 }
 
 time_marching = {
-    t_max = 1.5
-    dt = 0.05
+    t_max = 100
+    dt = 0.1
     marching_scheme = "bdf2"
 }
 
-Re = 1.0;
+Re = 100.0;
 disable_convection = false;
 method_config = {
     stab_scheme = "none"; # none or vms or sups
@@ -43,10 +46,6 @@ method_config = {
 sups_config = {
     use_supg = true;
     use_pspg = true;
-}
-
-mms2d_inputs = {
-    mms_type = 2; # 1 or 2
 }
 
 file_write_freq = 10;

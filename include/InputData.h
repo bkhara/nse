@@ -15,15 +15,9 @@ using mylib::InputReader;
 
 namespace nse {
     enum ProblemCaseId : unsigned int {
-        APS_2D = 0,
-        APS_3D = 1,
-        DYN_BRANCHING_2D = 3,
-        KALTHOFF_WINKLER = 4,
-        BEAM_2D = 100,
-        MMS_2D = 101,
-        NOTCHED_SHEAR = 102,
-        STOKES_MMS_2D = 301,
-        FPC_2D = 302,
+        NS_MMS_2D = 101,
+        LDC_2D = 201,
+        FPC_2D = 301,
     };
     enum CouplingFormulation : unsigned int {
         FULLY_COUPLED = 0, // both stabilized and unstabilized
@@ -538,11 +532,11 @@ namespace nse {
     };
 
     struct ProblemCaseConfig {
-        ProblemCaseId pcase_id = APS_2D;
+        ProblemCaseId pcase_id = NS_MMS_2D;
 
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading ProblemCase inputs\n"; }
-            unsigned int temp = APS_2D;
+            unsigned int temp = NS_MMS_2D;
             reader.ReadValue("pcase", temp);
             pcase_id = static_cast<ProblemCaseId>(temp);
         }

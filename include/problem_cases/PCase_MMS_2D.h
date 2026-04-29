@@ -308,7 +308,7 @@ namespace nse {
         }
     };
 
-    class PCase_Stokes_MMS_2D : public ProblemCase {
+    class PCase_MMS_2D : public ProblemCase {
         double omega;
         Array<int> bdr_attr_u;
         Array<int> bdr_attr_p;
@@ -327,7 +327,7 @@ namespace nse {
         };
 
         public:
-        PCase_Stokes_MMS_2D(InputData& idata, FEMachinery& fem, TimeLevelFields& tlf)
+        PCase_MMS_2D(InputData& idata, FEMachinery& fem, TimeLevelFields& tlf)
             : ProblemCase(idata, fem, tlf),
               omega(M_PI) {
 
