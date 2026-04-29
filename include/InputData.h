@@ -96,6 +96,10 @@ namespace nse {
         inline constexpr std::string_view AT2 = "at2";
         inline constexpr std::string_view WU = "wu";
     }
+    namespace TimeMarchingScheme {
+        inline constexpr std::string_view BDF2 = "bdf2";
+        inline constexpr std::string_view CN = "cn";
+    }
 
     enum class ProjectionScheme {
         ChorinFirstOrder,
@@ -458,76 +462,21 @@ namespace nse {
         }
     };
     struct TimeMarchingConfig {
-        struct GenAlpha {
-            bool use_explicit = false;
-            bool use_newmark = false;
-            bool use_hht = false;
-            bool use_wbz = false;
-            double rho_inf = 1.0;
-            double am = 1.; // a_{n+am} = (1-am) * a_{n} + am * a_{n+1}
-            double af = 1.; // t_{n+af} = (1-af) * t_{n} + af * t_{n+1}
-            double gamma = 0.5;
-            double beta = 0.25;
-            void CalcParams() {
-                if (use_explicit) {
-                    am = (2. - rho_inf) / (1. + rho_inf);
-                    beta = (5. - 3. * rho_inf) / (1. + rho_inf) / (1. + rho_inf) / (2. - rho_inf);
-                    gamma = 0.5 + am;
-                    af = 0.;
-                } else {
-                    am = (2. - rho_inf) / (1. + rho_inf);
-                    af = 1. / (1. + rho_inf);
-                    if (use_hht) {
-                        am = 1;
-                        af = 2. * rho_inf / (1. + rho_inf);
-                    } else if (use_wbz) {
-                        am = 2. / (1. + rho_inf);
-                        af = 1.;
-                    } else if (use_newmark) {
-                        am = 1.;
-                        af = 1.;
-                    }
-                    gamma = 0.5 + am - af;
-                    beta = 0.25 * std::pow(1 + am - af, 2.);
-                }
-            }
-            void PrintGenAlphaParams() const {
-                if (mfem::Mpi::WorldRank()) { return; }
-                mfem::out << "Printing gen-alpha parameters\n";
-                mfem::out << "am=" << am << ", af=" << af << ", beta=" << beta << ", gamma=" << gamma << std::endl;
-            }
-        };
-        GenAlpha gen_alpha;
+
         std::string time_dependence_type = std::string(TimeDependenceType::QUASISTATIC);
         bool compute_initial_acceleration = false;
+        std::string marching_scheme = std::string(TimeMarchingScheme::BDF2);
         double t0 = 0.;
         double t_max = 1.;
         double dt = 0.1;
         double dt_min = 1e-10;
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading TimeMarchingConfig\n"; }
+            reader.ReadValue("time_marching.marching_scheme", marching_scheme);
             reader.ReadValue("time_marching.t0", t0);
             reader.ReadValue("time_marching.t_max", t_max);
             reader.ReadValue("time_marching.dt", dt);
             reader.ReadValue("time_marching.dt_min", dt_min);
-            reader.ReadValue("time_marching.gen_alpha.use_explicit", gen_alpha.use_explicit);
-            reader.ReadValue("time_marching.gen_alpha.use_newmark", gen_alpha.use_newmark);
-            reader.ReadValue("time_marching.gen_alpha.use_hht", gen_alpha.use_hht);
-            reader.ReadValue("time_marching.gen_alpha.use_wbz", gen_alpha.use_wbz);
-            reader.ReadValue("time_marching.gen_alpha.rho_inf", gen_alpha.rho_inf);
-            reader.ReadValue("time_marching.time_dependence_type", time_dependence_type);
-            reader.ReadValue("time_marching.compute_initial_acceleration", compute_initial_acceleration);
-            int selected =
-                    static_cast<int>(gen_alpha.use_newmark) +
-                    static_cast<int>(gen_alpha.use_hht) +
-                    static_cast<int>(gen_alpha.use_wbz);
-            if (selected > 1)
-            {
-                MFEM_ABORT("Exactly one of {use_newmark, use_hht, use_wbz} must be true. "
-                           "Got selected=" << selected);
-            }
-            gen_alpha.CalcParams();
-            gen_alpha.PrintGenAlphaParams();
         }
         bool is_quasi_static() const {
             return time_dependence_type == TimeDependenceType::QUASISTATIC;

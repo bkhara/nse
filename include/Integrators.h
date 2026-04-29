@@ -216,6 +216,332 @@ namespace nse {
         }
     };
 
+    class NSEBlockIntegCrankNicolson : public NSEIntegratorBase {
+    private:
+        const double theta;
+
+    public:
+        NSEBlockIntegCrankNicolson(const InputData& idata,
+                                   const TimeLevelFields& tlf,
+                                   const int vdim,
+                                   const mfem::Ordering::Type ordering,
+                                   mfem::VectorCoefficient* f_coeff = nullptr)
+            : NSEIntegratorBase(idata, tlf, vdim, ordering, f_coeff),
+              theta(0.5) {
+            MFEM_VERIFY(theta >= 0.0 && theta <= 1.0,
+                        "Crank-Nicolson theta must be in [0, 1].");
+        }
+
+        void AssembleElementVector(const mfem::Array<const mfem::FiniteElement*>& el,
+                                   mfem::ElementTransformation& T,
+                                   const mfem::Array<const mfem::Vector*>& elfun,
+                                   const mfem::Array<mfem::Vector*>& elvec) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
+
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec[0]->SetSize(vdim * ndof_u);
+            *elvec[0] = 0.0;
+
+            elvec[1]->SetSize(ndof_p);
+            *elvec[1] = 0.0;
+
+            const mfem::Vector& eu = *elfun[0];
+            const mfem::Vector& ep = *elfun[1];
+
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
+
+            mfem::Vector u_np1(vdim), u_n(vdim);
+            mfem::Vector conv_np1(vdim), conv_n(vdim);
+            mfem::Vector f_np1(vdim), f_n(vdim);
+
+            mfem::DenseMatrix grad_u_np1(vdim, dim);
+            mfem::DenseMatrix grad_u_n(vdim, dim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double ctime = tlf.GetTime(); // t_{n+1}
+            const double dt = tlf.GetTimeStep();
+            const double ptime = ctime - dt; // t_n
+            const double nu = idata.flow_properties.nu;
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el_u.CalcShape(ip, Nu);
+                el_u.CalcPhysDShape(T, dNu);
+                el_p.CalcShape(ip, Np);
+
+                const double wdet = ip.weight * T.Weight();
+
+                // Current Newton unknowns: u^{n+1}, p^{n+1}
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u_np1);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u_np1);
+                const double p_np1 = EvalScalarAtIP(ep, Np);
+
+                // Previous accepted fields: u^n, p^n
+                tlf.prev_1.u.GetVectorValue(T, ip, u_n);
+                tlf.prev_1.u.GetVectorGradient(T, grad_u_n);
+                const double p_n = tlf.prev_1.p.GetValue(T, ip);
+
+                // Forcing at t_{n+1} and t_n
+                f_np1.SetSize(vdim);
+                f_np1 = 0.0;
+
+                f_n.SetSize(vdim);
+                f_n = 0.0;
+
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f_np1, T, ip);
+
+                    f_coeff->SetTime(ptime);
+                    f_coeff->Eval(f_n, T, ip);
+                }
+
+                const double div_u_np1 = Divergence(grad_u_np1);
+
+                conv_np1.SetSize(vdim);
+                conv_np1 = 0.0;
+
+                conv_n.SetSize(vdim);
+                conv_n = 0.0;
+
+                if (!idata.flow_properties.disable_convection) {
+                    EvalConvection(u_np1, grad_u_np1, conv_np1);
+                    EvalConvection(u_n, grad_u_n, conv_n);
+                }
+
+                const double p_theta =
+                    theta * p_np1 + (1.0 - theta) * p_n;
+
+                // ------------------------------------------------------------
+                // Momentum residual:
+                //
+                // ((u^{n+1} - u^n)/dt, v)
+                // + theta     ((u^{n+1}.grad)u^{n+1}, v)
+                // + (1-theta) ((u^n.grad)u^n, v)
+                // + nu (theta grad u^{n+1}
+                //       + (1-theta) grad u^n, grad v)
+                // - (theta p^{n+1} + (1-theta) p^n, div v)
+                // - (theta f^{n+1} + (1-theta) f^n, v)
+                //
+                // Continuity:
+                //
+                // (q, div u^{n+1})
+                // ------------------------------------------------------------
+                for (int a = 0; a < ndof_u; a++) {
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+
+                        // Time derivative
+                        (*elvec[0])(ia) +=
+                            ((u_np1(c) - u_n(c)) / dt) * Nu(a) * wdet;
+
+                        // Convective form
+                        if (!idata.flow_properties.disable_convection) {
+                            const double conv_theta =
+                                theta * conv_np1(c) + (1.0 - theta) * conv_n(c);
+
+                            (*elvec[0])(ia) += Nu(a) * conv_theta * wdet;
+                        }
+
+                        // Diffusion
+                        for (int j = 0; j < dim; j++) {
+                            const double grad_theta =
+                                theta * grad_u_np1(c, j)
+                                + (1.0 - theta) * grad_u_n(c, j);
+
+                            (*elvec[0])(ia) +=
+                                nu * grad_theta * dNu(a, j) * wdet;
+                        }
+
+                        // Pressure
+                        (*elvec[0])(ia) +=
+                            -p_np1 * dNu(a, c) * wdet;
+
+                        // Forcing
+                        const double f_theta =
+                            theta * f_np1(c) + (1.0 - theta) * f_n(c);
+
+                        (*elvec[0])(ia) +=
+                            -f_theta * Nu(a) * wdet;
+                    }
+                }
+
+                // Continuity residual
+                for (int a = 0; a < ndof_p; a++) {
+                    (*elvec[1])(a) += Np(a) * div_u_np1 * wdet;
+                }
+            }
+        }
+
+        void AssembleElementGrad(const mfem::Array<const mfem::FiniteElement*>& el,
+                                 mfem::ElementTransformation& T,
+                                 const mfem::Array<const mfem::Vector*>& elfun,
+                                 const mfem::Array2D<mfem::DenseMatrix*>& elmat) override {
+            const mfem::FiniteElement& el_u = *el[0];
+            const mfem::FiniteElement& el_p = *el[1];
+
+            const int ndof_u = el_u.GetDof();
+            const int ndof_p = el_p.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elmat(0, 0)->SetSize(vdim * ndof_u, vdim * ndof_u);
+            *elmat(0, 0) = 0.0;
+
+            elmat(0, 1)->SetSize(vdim * ndof_u, ndof_p);
+            *elmat(0, 1) = 0.0;
+
+            elmat(1, 0)->SetSize(ndof_p, vdim * ndof_u);
+            *elmat(1, 0) = 0.0;
+
+            elmat(1, 1)->SetSize(ndof_p, ndof_p);
+            *elmat(1, 1) = 0.0;
+
+            mfem::DenseMatrix& Auu = *elmat(0, 0);
+            mfem::DenseMatrix& Aup = *elmat(0, 1);
+            mfem::DenseMatrix& Apu = *elmat(1, 0);
+
+            const mfem::Vector& eu = *elfun[0];
+
+            mfem::Vector Nu(ndof_u), Np(ndof_p);
+            mfem::DenseMatrix dNu(ndof_u, dim);
+
+            mfem::Vector u_np1(vdim);
+            mfem::DenseMatrix grad_u_np1(vdim, dim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double dt = tlf.GetTimeStep();
+            const double nu = idata.flow_properties.nu;
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el_u.CalcShape(ip, Nu);
+                el_u.CalcPhysDShape(T, dNu);
+                el_p.CalcShape(ip, Np);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(eu, ndof_u, vdim, ordering, Nu, u_np1);
+                EvalVectorGradAtIP(eu, ndof_u, vdim, ordering, dNu, grad_u_np1);
+
+                // ------------------------------------------------------------
+                // Auu block
+                //
+                // d/du [
+                //   (1/dt) (u, v)
+                // + theta ((u.grad)u, v)
+                // + theta nu (grad u, grad v)
+                // ]
+                //
+                // Convective form:
+                //
+                // C_c(u) = (u . grad) u_c
+                //
+                // dC_c/du_k =
+                //   phi_b * grad_k u_c
+                // + delta_ck * (u . grad phi_b)
+                // ------------------------------------------------------------
+                for (int a = 0; a < ndof_u; a++) {
+                    for (int b = 0; b < ndof_u; b++) {
+                        const double mass_ab =
+                            (1.0 / dt) * Nu(a) * Nu(b) * wdet;
+
+                        double diff_ab = 0.0;
+                        for (int j = 0; j < dim; j++) {
+                            diff_ab +=
+                                theta * nu * dNu(a, j) * dNu(b, j) * wdet;
+                        }
+
+                        // Mass + diffusion: diagonal in velocity components
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+                            const int ib = VDofIndex(ndof_u, vdim, b, c, ordering);
+
+                            Auu(ia, ib) += mass_ab + diff_ab;
+                        }
+
+                        if (!idata.flow_properties.disable_convection) {
+                            double u_dot_grad_Nb = 0.0;
+                            for (int j = 0; j < dim; j++) {
+                                u_dot_grad_Nb += u_np1(j) * dNu(b, j);
+                            }
+
+                            for (int c = 0; c < vdim; c++) {
+                                const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+
+                                for (int k = 0; k < vdim; k++) {
+                                    const int ib = VDofIndex(ndof_u, vdim, b, k, ordering);
+
+                                    double conv_jac = 0.0;
+
+                                    // delta u . grad u_c
+                                    conv_jac += Nu(b) * grad_u_np1(c, k);
+
+                                    // u . grad(delta u_c)
+                                    if (c == k) {
+                                        conv_jac += u_dot_grad_Nb;
+                                    }
+
+                                    Auu(ia, ib) +=
+                                        theta * Nu(a) * conv_jac * wdet;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ------------------------------------------------------------
+                // Aup block
+                //
+                // d/dp [ -(theta p^{n+1}, div v) ]
+                // ------------------------------------------------------------
+                for (int a = 0; a < ndof_u; a++) {
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof_u, vdim, a, c, ordering);
+
+                        for (int b = 0; b < ndof_p; b++) {
+                            Aup(ia, b) +=
+                                - Np(b) * dNu(a, c) * wdet;
+                        }
+                    }
+                }
+
+                // ------------------------------------------------------------
+                // Apu block
+                //
+                // d/du [ (q, div u^{n+1}) ]
+                // ------------------------------------------------------------
+                for (int a = 0; a < ndof_p; a++) {
+                    for (int b = 0; b < ndof_u; b++) {
+                        for (int c = 0; c < vdim; c++) {
+                            const int ib = VDofIndex(ndof_u, vdim, b, c, ordering);
+
+                            Apu(a, ib) += Np(a) * dNu(b, c) * wdet;
+                        }
+                    }
+                }
+
+                // App block remains zero.
+            }
+        }
+    };
+
     class NSEBlockIntegBDF2 : public NSEIntegratorBase {
     public:
         NSEBlockIntegBDF2(const InputData& idata,

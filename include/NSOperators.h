@@ -51,22 +51,28 @@ namespace nse {
             }
 
             bnlf = new mfem::ParBlockNonlinearForm(fem.fespace_block_up);
-            bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
-            if (pcase->has_outlet_bc) {
-                bnlf->AddBdrFaceIntegrator(
-                    new NSEBlockIntegBDF2OutletConvectiveFlux(idata, tlf, fem.vel_vdim, fem.ordering, nullptr),
-                    pcase->outlet_marker
-                    );
-            }
-            if (idata.method_config.use_stab_vms()) {
-                bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2VMSConservative(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
-            } else if (idata.method_config.use_stab_sups()) {
-                if (idata.sups_config.use_supg) {
-                    bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2SUPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+            if (idata.time_marching.marching_scheme == TimeMarchingScheme::BDF2) {
+                bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                if (pcase->has_outlet_bc) {
+                    bnlf->AddBdrFaceIntegrator(
+                        new NSEBlockIntegBDF2OutletConvectiveFlux(idata, tlf, fem.vel_vdim, fem.ordering, nullptr),
+                        pcase->outlet_marker
+                        );
                 }
-                if (idata.sups_config.use_pspg) {
-                    bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2PSPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                if (idata.method_config.use_stab_vms()) {
+                    bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2VMSConservative(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                } else if (idata.method_config.use_stab_sups()) {
+                    if (idata.sups_config.use_supg) {
+                        bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2SUPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                    }
+                    if (idata.sups_config.use_pspg) {
+                        bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2PSPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                    }
                 }
+            } else if (idata.time_marching.marching_scheme == TimeMarchingScheme::CN) {
+                bnlf->AddDomainIntegrator(new NSEBlockIntegCrankNicolson(idata, tlf, fem.vel_vdim,fem.ordering, pcase->forcing_rhs));
+            } else {
+                MFEM_ABORT("Unknown TimeMarchingScheme. Must be either bdf2 or cn");
             }
         }
 

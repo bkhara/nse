@@ -28,23 +28,15 @@ fe_latent = {
 }
 
 time_marching = {
-    time_dependence_type = "dy"; # "qs" or "dy"
-    compute_initial_acceleration = false;
     t_max = 1.5
     dt = 0.05
-    gen_alpha = {
-        use_explicit = false
-        use_newmark = false
-        use_hht = false
-        use_wbz = false
-        rho_inf = 0.5
-    }
+    marching_scheme = "bdf2"
 }
 
 Re = 1.0;
 disable_convection = false;
 method_config = {
-    stab_scheme = "sups"; # none or vms or sups
+    stab_scheme = "none"; # none or vms or sups
     coupling_form = 0; # 0: coupled, 1: uncoupled
 }
 
