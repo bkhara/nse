@@ -27,3 +27,6 @@ cd ${BUILD_DIR} || exit; make ${FEXEC}; cd "${CWD}" || exit;
 COM="${MPIRUN} ${BUILD_DIR}/${FEXEC} ${CMD_ARGS}"
 echo "${COM}"
 ${COM}
+
+# source /work/mech-ai/bkhara/python_virtual_envs/lightning/bin/activate
+# python multirun_cases.py -type run
