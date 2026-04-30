@@ -208,14 +208,217 @@ class FPCReStabRuns(ReStabRuns):
             f"Re={Re}, stab_scheme={stab_scheme}{bcolors.ENDC}"
         )
 
-        # Keep this compatible with your existing FPC helper.
-        if os.path.exists("analyse_forces.py"):
-            subprocess.run(["python", "analyse_forces.py"], check=False)
-        else:
+        force_file = self.find_force_file()
+        if force_file is None:
             print(
-                f"{bcolors.WARNING}analyse_forces.py not found for "
+                f"{bcolors.WARNING}No force file found for "
                 f"Re={Re}, stab_scheme={stab_scheme}{bcolors.ENDC}"
             )
+            return
+
+        summary = self.analyze_force_timeseries(force_file)
+
+        outname = f"re-{Re}-stab_{stab_scheme}_force_summary.txt"
+        self.write_force_summary(summary, outname)
+
+        print(f"{bcolors.OKGREEN}Wrote {outname}{bcolors.ENDC}")
+
+    @staticmethod
+    def find_force_file():
+        """
+        Look for the force time-series file in the current case directory.
+
+        Expected format:
+            t,Cd,Cl
+            0.1,36.6691,-0.0483255
+            0.2,-9.42164,0.0139223
+            ...
+        """
+        import os
+
+        candidates = [
+            "forces.csv",
+            "force.csv",
+            "force_coefficients.csv",
+            "drag_lift.csv",
+            "CdCl.csv",
+        ]
+
+        for filename in candidates:
+            if os.path.exists(filename):
+                return filename
+
+        return None
+
+    def analyze_force_timeseries(self, force_file):
+        import numpy as np
+        import pandas as pd
+
+        Re = self.idata.Re
+        stab_scheme = self.idata.stab_scheme
+
+        df = pd.read_csv(force_file)
+
+        required = ["t", "Cd", "Cl"]
+        for col in required:
+            if col not in df.columns:
+                raise RuntimeError(
+                    f"Expected column `{col}` in {force_file}. "
+                    f"Available columns are {list(df.columns)}"
+                )
+
+        # Clean and sort.
+        df = df[required].dropna()
+        df = df.sort_values("t").reset_index(drop=True)
+
+        t = df["t"].to_numpy(dtype=float)
+        Cd = df["Cd"].to_numpy(dtype=float)
+        Cl = df["Cl"].to_numpy(dtype=float)
+
+        if len(t) < 20:
+            raise RuntimeError(
+                f"Not enough force samples in {force_file}; "
+                f"found only {len(t)} rows."
+            )
+
+        periodic_start_time = self.detect_periodic_start_time(t, Cl)
+
+        mask = t >= periodic_start_time
+        t_stat = t[mask]
+        Cd_stat = Cd[mask]
+        Cl_stat = Cl[mask]
+
+        mean_Cd = float(np.mean(Cd_stat))
+        mean_Cl = float(np.mean(Cl_stat))
+
+        shedding_frequency, mean_period, n_cycles = self.estimate_shedding_frequency(
+            t_stat, Cl_stat
+        )
+
+        # Assumes nondimensionalization with U = 1 and D = 1.
+        # If not, replace this by St = shedding_frequency * D / U.
+        strouhal = shedding_frequency
+
+        summary = {
+            "re": Re,
+            "stab_scheme": stab_scheme,
+            "force_file": force_file,
+            "periodic_start_time": periodic_start_time,
+            "mean_cd": mean_Cd,
+            "mean_cl": mean_Cl,
+            "mean_period": mean_period,
+            "shedding_frequency": shedding_frequency,
+            "strouhal": strouhal,
+            "num_cycles_used": n_cycles,
+            "num_samples_used": len(t_stat),
+        }
+
+        return summary
+
+    @staticmethod
+    def write_force_summary(summary, outname):
+        with open(outname, "w") as f:
+            for key, value in summary.items():
+                f.write(f"{key}:{value}\n")
+
+    @staticmethod
+    def detect_periodic_start_time(t, Cl):
+        """
+        Heuristic detector for the beginning of the statistically periodic regime.
+
+        Idea:
+          - find local maxima of Cl
+          - compare cycle-to-cycle amplitude and period
+          - declare periodicity once both become approximately stable
+          - fall back to the second half of the signal if detection fails
+
+        This is intentionally conservative and does not require scipy.
+        """
+        import numpy as np
+
+        peak_idx = FPCReStabRuns.find_local_maxima(Cl)
+
+        # Need enough peaks to judge periodicity.
+        if len(peak_idx) < 6:
+            return float(t[len(t) // 2])
+
+        peak_t = t[peak_idx]
+        peak_Cl = Cl[peak_idx]
+
+        periods = np.diff(peak_t)
+
+        period_tol = 0.05
+        amplitude_tol = 0.05
+        required_good_cycles = 3
+
+        for i in range(1, len(periods) - required_good_cycles):
+            good = True
+
+            for j in range(required_good_cycles):
+                p0 = periods[i + j - 1]
+                p1 = periods[i + j]
+
+                a0 = abs(peak_Cl[i + j - 1])
+                a1 = abs(peak_Cl[i + j])
+
+                period_change = abs(p1 - p0) / max(abs(p0), 1.0e-14)
+                amplitude_change = abs(a1 - a0) / max(abs(a0), 1.0e-14)
+
+                if period_change > period_tol or amplitude_change > amplitude_tol:
+                    good = False
+                    break
+
+            if good:
+                return float(peak_t[i])
+
+        # Fallback: use the latter half.
+        return float(t[len(t) // 2])
+
+    @staticmethod
+    def estimate_shedding_frequency(t, Cl):
+        """
+        Estimate vortex shedding frequency from positive Cl peaks.
+
+        Returns:
+            frequency, mean_period, number_of_cycles_used
+        """
+        import numpy as np
+
+        peak_idx = FPCReStabRuns.find_local_maxima(Cl)
+
+        if len(peak_idx) < 3:
+            return float("nan"), float("nan"), 0
+
+        peak_t = t[peak_idx]
+        periods = np.diff(peak_t)
+
+        if len(periods) == 0:
+            return float("nan"), float("nan"), 0
+
+        mean_period = float(np.mean(periods))
+        frequency = 1.0 / mean_period
+
+        return float(frequency), mean_period, int(len(periods))
+
+    @staticmethod
+    def find_local_maxima(y):
+        """
+        Simple local maxima detector without scipy.
+
+        A point i is a local maximum if
+
+            y[i-1] < y[i] and y[i] >= y[i+1]
+        """
+        import numpy as np
+
+        y = np.asarray(y)
+
+        if len(y) < 3:
+            return np.array([], dtype=int)
+
+        maxima = np.where((y[1:-1] > y[:-2]) & (y[1:-1] >= y[2:]))[0] + 1
+
+        return maxima.astype(int)
 
 
 def make_runner(arg):
