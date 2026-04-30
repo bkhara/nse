@@ -35,8 +35,8 @@ possible_scripts_with_project_dir_variable = [
 ]
 
 multirun_scripts = [
-    "exec_settings.py",
-    "multirun_re_stab.py",
+    "_exec_settings.py",
+    "_multirun_re_stab.py",
     "multirun_cases.py"
 ]
 
