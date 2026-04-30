@@ -27,7 +27,7 @@ class CaseStrings:
 cs = CaseStrings
 
 possible_scripts_with_project_dir_variable = [
-    "exec_settings.py",
+    "_exec_settings.py",
     "runex.sh",
     "job.sh",
     "nova.sh",
