@@ -44,6 +44,7 @@ temporal_order = [
 
 class SupportingFiles:
 	common = [
+		"ns.petsc",
 		"runex.sh",
 		"job.sh",
 		"job-dev.sh",
