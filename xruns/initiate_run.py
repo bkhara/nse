@@ -27,8 +27,10 @@ class CaseStrings:
 cs = CaseStrings
 
 possible_scripts = [
+    "exec_settings.py",
     "runex.sh",
     "job.sh",
+    "nova.sh",
     "oscar.sh"
 ]
 
@@ -57,31 +59,20 @@ class CopyScripts:
         restart_script = os.path.join(SCRIPTS_HOME, "restart.py")
         shutil.copy(restart_script, destination_dir)
 
-    def copy_exec_files(self, arg, destination_dir : str):
-        exec_settings_file = os.path.join(SCRIPTS_HOME, "exec_settings.py")
-        exec_file = os.path.join(SCRIPTS_HOME, "exec_all_s.py")
-        shutil.copy(exec_settings_file, destination_dir)
-        shutil.copy(exec_file, destination_dir)
-
     def check_multirun_eligibility(self, arg):
-        assert_flag = arg.casename == cs.e1 or arg.casename == cs.e2 or arg.casename == cs.e36
+        assert_flag = arg.casename == cs.fpc2 or arg.casename == cs.ldc2
         assert assert_flag, f"{cl.red}{arg.casename} does not have multirun script{cl.Endc}"
 
     def copy_multirun_files(self, arg, destination_dir : str):
         self.check_multirun_eligibility(arg)
-        if arg.casename == cs.e1:
-            multirun_file = os.path.join(SCRIPTS_HOME, "multirun_mms_time_conv.py")
-        elif arg.casename == cs.e2:
-            multirun_file = os.path.join(SCRIPTS_HOME, "multirun_fpc_kanaris.py")
-        elif arg.casename == cs.e36:
-            multirun_file = os.path.join(SCRIPTS_HOME, "multirun_ldc_ghia.py")
+        multirun_file = os.path.join(SCRIPTS_HOME, "multirun_re_stab.py")
+        exec_file = os.path.join(SCRIPTS_HOME, "exec_settings.py")
         shutil.copy(multirun_file, destination_dir)
+        shutil.copy(exec_file, destination_dir)
 
     def copy_scripts(self, arg, destination_dir : str):
         if arg.restart:
             self.copy_restart_file(arg, destination_dir)
-        if arg.exec or arg.multi:
-            self.copy_exec_files(arg, destination_dir)
         if arg.multi:
             self.copy_multirun_files(arg, destination_dir)
 
@@ -134,7 +125,7 @@ if __name__ == "__main__":
         cps.check_multirun_eligibility(arg)
     # finally copy the directory structure and other scripts if applicable
     shutil.copytree(case_source_dir, destination_dir)
-    # cps.copy_scripts(arg, destination_dir)
+    cps.copy_scripts(arg, destination_dir)
 
     # update the path of the project in the run scripts
     for filename in possible_scripts:
