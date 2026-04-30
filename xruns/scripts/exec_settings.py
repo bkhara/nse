@@ -101,6 +101,28 @@ class FPC2d_Data:
 		400,
 	]
 
+	@staticmethod
+	def decide_time_span_and_step(re):
+		if re <= 50:
+			totalT = 100
+			dt = 0.2
+		elif 50 < re <= 100:
+			totalT = 150
+			dt = 0.1
+		elif 100 < re <= 200:
+			totalT = 200
+			dt = 0.05
+		elif 200 < re <= 300:
+			totalT = 250
+			dt = 0.03
+		elif 300 < re:
+			totalT = 300
+			dt = 0.01
+		else:
+			totalT = 300
+			dt = 0.01
+		return totalT, dt
+
 class LDC2d_Data:
 	rev = [
 		100,
@@ -111,3 +133,18 @@ class LDC2d_Data:
 		7500,
 		10000
 	]
+
+	@staticmethod
+	def decide_time_span_and_step(re):
+		totalT = 50
+		dt = 1
+		if re < 5000:
+			totalT = 5000 # 250 is sufficient
+			dt = 1.0
+		elif 5000 <= re < 7000:
+			totalT = 5000 # 1500 is sufficient
+			dt = 0.5
+		elif 7000 <= re:
+			totalT = 5000
+			dt = 0.1
+		return totalT, dt

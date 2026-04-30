@@ -20,6 +20,16 @@ pas = ProgramArgumentStrings
 STAB_SCHEMES = ["none", "sups"]
 USE_PSPG = False
 
+def infer_time_span_and_step(config, re_value):
+    pcase = config.get('pcase', None)
+
+    if pcase == FlowPastCylinder:
+        return FPC2d_Data.decide_time_span_and_step(re_value)
+
+    if pcase == LidDrivenCavity:
+        return LDC2d_Data.decide_time_span_and_step(re_value)
+
+    raise ValueError(f"No time-step rule is defined for pcase={pcase}.")
 
 class bcolors:
     HEADER = '\033[95m'
@@ -180,6 +190,12 @@ class ReStabRuns(object):
     def modify_config(self):
         self.config['Re'] = float(self.idata.Re)
 
+        if 'time_marching' not in self.config:
+            self.config['time_marching'] = {}
+
+        self.config['time_marching']['t_max'] = float(self.idata.T)
+        self.config['time_marching']['dt'] = float(self.idata.dt)
+
         if 'method_config' not in self.config:
             self.config['method_config'] = {}
         self.config['method_config']['stab_scheme'] = self.idata.stab_scheme
@@ -308,6 +324,11 @@ class ReStabRuns(object):
     def run_all_cases(self):
         for re_value in self.rev:
             self.idata.Re = re_value
+
+            T, dt = infer_time_span_and_step(self.config, re_value)
+            self.idata.T = T
+            self.idata.dt = dt
+
             for stab_scheme in STAB_SCHEMES:
                 self.idata.stab_scheme = stab_scheme
                 self.action(case_dir_name(re_value, stab_scheme))
