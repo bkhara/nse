@@ -14,13 +14,6 @@ from _exec_settings import *
 egf = ExecGlobalFileNames
 pas = ProgramArgumentStrings
 
-# -----------------------------------------------------------------------------
-# Sweep options
-# -----------------------------------------------------------------------------
-STAB_SCHEMES = ["none", "sups"]
-USE_PSPG = False
-
-
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -215,6 +208,9 @@ class ReStabRuns(object):
         use_sups = (self.idata.stab_scheme == "sups")
         self.config['sups_config']['use_supg'] = use_sups
         self.config['sups_config']['use_pspg'] = USE_PSPG
+
+        nsteps = int(round(float(self.idata.T) / float(self.idata.dt)))
+        self.config['file_write_freq'] = max(1, int(round(nsteps / FIXED_NUM_FILES_TO_WRITE)))
 
     def copy_config(self):
         with io.open('./config.txt', 'w') as f:
