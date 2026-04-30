@@ -87,27 +87,6 @@ class MMS_Conv_Data:
 	bf = "quadratic"
 	totalT = 2.5 * np.pi
 
-class DIB_Data:
-	rev = [
-		# 1e0,
-		1e1,
-		# 1e2,
-		1e3,
-		# 1e4,
-		# 1e5,
-		1e6
-	]
-	courantv = [
-		10.0,
-		5.0,
-		2.0,
-		1.0,
-		# 0.5,
-	]
-	totalT = 1e6
-	Umax = np.pi
-	fileOutputSpan = 10.
-
 class FPC2d_Data:
 	rev = [
 		1,

@@ -17,7 +17,6 @@ pas = ProgramArgumentStrings
 # -----------------------------------------------------------------------------
 # Sweep options
 # -----------------------------------------------------------------------------
-REV = [30, 60, 100, 150, 200, 250, 300, 400]
 STAB_SCHEMES = ["none", "sups"]
 USE_PSPG = False
 
@@ -98,6 +97,21 @@ def solve_time_filename(stab_scheme):
 def checkdiv_filename():
     return "divergence_summary.txt"
 
+def infer_reynolds_numbers(config):
+    """Infer the Reynolds-number sweep from exec_settings.py using config['pcase']."""
+    pcase = config.get('pcase', None)
+
+    if pcase == FlowPastCylinder:
+        return list(FPC2d_Data.rev)
+    if pcase == LidDrivenCavity:
+        return list(LDC2d_Data.rev)
+
+    raise ValueError(
+        f"No Reynolds-number sweep is defined for pcase={pcase}. "
+        "Add the corresponding <Case>_Data.rev class in exec_settings.py "
+        "and extend infer_reynolds_numbers()."
+    )
+
 
 class ReStabRuns(object):
     def __init__(self, arg):
@@ -113,6 +127,7 @@ class ReStabRuns(object):
         self.idata = AttrDict()
         self.idata.Re = None
         self.idata.stab_scheme = None
+        self.rev = infer_reynolds_numbers(self.config)
 
         self.common_supporting_files = SupportingFiles.common
         self.specific_supporting_files = self.infer_specific_supporting_files()
@@ -122,7 +137,7 @@ class ReStabRuns(object):
             with open(os.path.join(self.top_path, egf.ExecLogFile), "a") as f:
                 f.write(f"--------------------------------\n")
                 f.write(f"New {self.arg.runtype}\n")
-                f.write(f"Re = {REV}\n")
+                f.write(f"Re = {self.rev}\n")
                 f.write(f"stab_scheme = {STAB_SCHEMES}\n")
                 f.write(f"--------------------------------\n")
 
@@ -291,7 +306,7 @@ class ReStabRuns(object):
         os.chdir(cwd)
 
     def run_all_cases(self):
-        for re_value in REV:
+        for re_value in self.rev:
             self.idata.Re = re_value
             for stab_scheme in STAB_SCHEMES:
                 self.idata.stab_scheme = stab_scheme
