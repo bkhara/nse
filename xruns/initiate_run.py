@@ -26,12 +26,18 @@ class CaseStrings:
     ldc2 = "ldc"
 cs = CaseStrings
 
-possible_scripts = [
+possible_scripts_with_project_dir_variable = [
     "exec_settings.py",
     "runex.sh",
     "job.sh",
     "nova.sh",
     "oscar.sh"
+]
+
+multirun_scripts = [
+    "exec_settings.py",
+    "multirun_re_stab.py",
+    "multirun_cases.py"
 ]
 
 def determine_destination_path(dest_dir):
@@ -65,10 +71,13 @@ class CopyScripts:
 
     def copy_multirun_files(self, arg, destination_dir : str):
         self.check_multirun_eligibility(arg)
-        multirun_file = os.path.join(SCRIPTS_HOME, "multirun_re_stab.py")
-        exec_file = os.path.join(SCRIPTS_HOME, "exec_settings.py")
-        shutil.copy(multirun_file, destination_dir)
-        shutil.copy(exec_file, destination_dir)
+        for file in multirun_scripts:
+            srcfullpath = os.path.join(SCRIPTS_HOME, file)
+            shutil.copy(srcfullpath, destination_dir)
+        # multirun_file = os.path.join(SCRIPTS_HOME, "multirun_re_stab.py")
+        # exec_file = os.path.join(SCRIPTS_HOME, "exec_settings.py")
+        # shutil.copy(multirun_file, destination_dir)
+        # shutil.copy(exec_file, destination_dir)
 
     def copy_scripts(self, arg, destination_dir : str):
         if arg.restart:
@@ -128,7 +137,7 @@ if __name__ == "__main__":
     cps.copy_scripts(arg, destination_dir)
 
     # update the path of the project in the run scripts
-    for filename in possible_scripts:
+    for filename in possible_scripts_with_project_dir_variable:
         full_file_path = os.path.join(destination_dir, filename)
         if os.path.exists(full_file_path):
             update_project_path_in_runex(project_path, full_file_path)

@@ -9,7 +9,7 @@ import fileinput
 
 import libconf
 
-from exec_settings import *
+from _exec_settings import *
 
 egf = ExecGlobalFileNames
 pas = ProgramArgumentStrings
@@ -20,16 +20,6 @@ pas = ProgramArgumentStrings
 STAB_SCHEMES = ["none", "sups"]
 USE_PSPG = False
 
-def infer_time_span_and_step(config, re_value):
-    pcase = config.get('pcase', None)
-
-    if pcase == FlowPastCylinder:
-        return FPC2d_Data.decide_time_span_and_step(re_value)
-
-    if pcase == LidDrivenCavity:
-        return LDC2d_Data.decide_time_span_and_step(re_value)
-
-    raise ValueError(f"No time-step rule is defined for pcase={pcase}.")
 
 class bcolors:
     HEADER = '\033[95m'
@@ -107,23 +97,27 @@ def solve_time_filename(stab_scheme):
 def checkdiv_filename():
     return "divergence_summary.txt"
 
-def infer_reynolds_numbers(config):
-    """Infer the Reynolds-number sweep from exec_settings.py using config['pcase']."""
-    pcase = config.get('pcase', None)
-
-    if pcase == FlowPastCylinder:
-        return list(FPC2d_Data.rev)
-    if pcase == LidDrivenCavity:
-        return list(LDC2d_Data.rev)
-
-    raise ValueError(
-        f"No Reynolds-number sweep is defined for pcase={pcase}. "
-        "Add the corresponding <Case>_Data.rev class in exec_settings.py "
-        "and extend infer_reynolds_numbers()."
-    )
-
 
 class ReStabRuns(object):
+    """
+    Generic Reynolds-number/stabilization sweep driver.
+
+    This base class owns the common mechanics:
+      - creating case directories
+      - modifying/copying config.txt
+      - copying supporting files
+      - running/submitting jobs
+      - consolidation/check-divergence utilities
+
+    Case-specific subclasses should define:
+      - rev
+      - decide_time_span_and_step(re)
+      - atomic_postprocess()
+    """
+
+    rev = []
+    case_name = "generic"
+
     def __init__(self, arg):
         super(ReStabRuns, self).__init__()
         self.top_path = os.getcwd()
@@ -136,8 +130,16 @@ class ReStabRuns(object):
         self.arg = arg
         self.idata = AttrDict()
         self.idata.Re = None
+        self.idata.T = None
+        self.idata.dt = None
         self.idata.stab_scheme = None
-        self.rev = infer_reynolds_numbers(self.config)
+
+        if not self.rev:
+            raise ValueError(
+                f"No Reynolds-number sweep is defined for {self.__class__.__name__}. "
+                "Define a non-empty class variable `rev` in the case-specific subclass."
+            )
+        self.rev = list(self.rev)
 
         self.common_supporting_files = SupportingFiles.common
         self.specific_supporting_files = self.infer_specific_supporting_files()
@@ -147,6 +149,7 @@ class ReStabRuns(object):
             with open(os.path.join(self.top_path, egf.ExecLogFile), "a") as f:
                 f.write(f"--------------------------------\n")
                 f.write(f"New {self.arg.runtype}\n")
+                f.write(f"case = {self.case_name}\n")
                 f.write(f"Re = {self.rev}\n")
                 f.write(f"stab_scheme = {STAB_SCHEMES}\n")
                 f.write(f"--------------------------------\n")
@@ -157,10 +160,15 @@ class ReStabRuns(object):
             with open(os.path.join(self.top_path, checkdiv_filename()), "w") as f:
                 f.write("Re,stab_scheme,num_diverged\n")
 
+    @staticmethod
+    def decide_time_span_and_step(re_value):
+        raise NotImplementedError(
+            "Case-specific subclasses must implement decide_time_span_and_step(re_value)."
+        )
+
     def infer_specific_supporting_files(self):
         files = []
 
-        # Flow-past-cylinder inputs from the old style, if present.
         pcase = self.config.get('pcase', None)
         if pcase == FlowPastCylinder:
             files.extend(SupportingFiles.fpc)
@@ -248,7 +256,11 @@ class ReStabRuns(object):
             file.write(jobId[0] + "\n" if jobId else result.stdout + result.stderr + "\n")
 
     def atomic_postprocess(self):
-        pass
+        print(
+            f"{bcolors.WARNING}No postprocessing implemented for "
+            f"{self.__class__.__name__}: "
+            f"Re={self.idata.Re}, stab_scheme={self.idata.stab_scheme}{bcolors.ENDC}"
+        )
 
     def setup_consolidation_files(self):
         for stab_scheme in STAB_SCHEMES:
@@ -325,7 +337,7 @@ class ReStabRuns(object):
         for re_value in self.rev:
             self.idata.Re = re_value
 
-            T, dt = infer_time_span_and_step(self.config, re_value)
+            T, dt = self.decide_time_span_and_step(re_value)
             self.idata.T = T
             self.idata.dt = dt
 
@@ -334,8 +346,11 @@ class ReStabRuns(object):
                 self.action(case_dir_name(re_value, stab_scheme))
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='multirun_re_stab.py', usage='python %(prog)s [options]')
+def run_runner(runner_class):
+    parser = argparse.ArgumentParser(
+        prog=f'{runner_class.__name__}',
+        usage='python %(prog)s [options]'
+    )
     arg = get_args(parser)
 
     start_time = time.perf_counter()
@@ -343,8 +358,21 @@ if __name__ == "__main__":
     run_script_filename = get_run_script_filename(arg)
     set_project_path_in_script(run_script_filename)
 
-    runner = ReStabRuns(arg)
+    runner = runner_class(arg)
     runner.run_all_cases()
 
     end_time = time.perf_counter()
-    print(bcolors.FAILBOLD, f"Elapsed time = {(end_time-start_time):.2f} sec ({(end_time-start_time) / 60:.2f} min)", bcolors.ENDC)
+    print(
+        bcolors.FAILBOLD,
+        f"Elapsed time = {(end_time-start_time):.2f} sec ({(end_time-start_time) / 60:.2f} min)",
+        bcolors.ENDC,
+    )
+
+
+if __name__ == "__main__":
+    # The generic base class is intentionally not case-aware anymore.
+    # Use multirun_cases.py as the normal entry point.
+    print(
+        f"{bcolors.WARNING}Use `python multirun_cases.py -type <prep|run|dev|prod|pp|cons|checkdiv>` "
+        f"so the correct case-specific subclass can be selected from config.txt.{bcolors.ENDC}"
+    )
