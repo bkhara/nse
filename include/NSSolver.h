@@ -103,8 +103,6 @@ namespace nse {
         TimeLevelFields& tlf;
         ProblemCase* pcase;
 
-        ProjectionScheme &scheme;
-
         NSEProjectionVelocityPredictorOperator* vel_pred_op = nullptr;
         mfem::PetscNonlinearSolver* vel_pred_solver = nullptr;
 
@@ -127,7 +125,6 @@ namespace nse {
               fem(fem),
               tlf(tlf),
               pcase(pcase),
-              scheme(idata.projection_config.scheme),
               A_ppe(fem.fespace_p), B_ppe(fem.fespace_p),
               A_vue(fem.fespace_primal_u), B_vue(fem.fespace_primal_u),
               phi(fem.fespace_p) {
@@ -138,8 +135,7 @@ namespace nse {
             // set up operators for (nonlinear) Momentum
             {
                 vel_pred_op =
-                   new NSEProjectionVelocityPredictorOperator(
-                       idata, fem, tlf, pcase, scheme);
+                   new NSEProjectionVelocityPredictorOperator(idata, fem, tlf, pcase);
 
                 const std::string mom_prefix(PetscSolverPrefix::NS_UNCOUPLED_MOMENTUM);
                 vel_pred_solver =
@@ -156,7 +152,7 @@ namespace nse {
                 A_ppe.Assemble();
                 A_ppe.Finalize();
 
-                B_ppe.AddDomainIntegrator(new NSEProjPPERHSInteg(idata, tlf, scheme, fem.vel_vdim, pcase->forcing_rhs));
+                B_ppe.AddDomainIntegrator(new NSEProjPPERHSInteg(idata, tlf, fem.vel_vdim, pcase->forcing_rhs));
             }
 
             // set up operators for VUE
@@ -165,7 +161,7 @@ namespace nse {
                 A_vue.Assemble();
                 A_vue.Finalize();
 
-                B_vue.AddDomainIntegrator(new NSEProjVUERHSInteg(idata, tlf, scheme, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                B_vue.AddDomainIntegrator(new NSEProjVUERHSInteg(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
             }
         }
 
@@ -177,9 +173,6 @@ namespace nse {
         void SolveStep(const double t, const double dt) override {
             pcase->SetTimeStep(dt);
             pcase->SetTime(t);
-
-            const ProjectionCoefficients pc =
-                GetProjectionCoefficients(scheme, dt);
 
             // ------------------------------------------------------------
             // Step 1: tentative velocity solve
@@ -201,12 +194,12 @@ namespace nse {
             // ------------------------------------------------------------
             // Step 2: pressure increment Poisson solve
             // ------------------------------------------------------------
-            SolvePressureIncrement(pc.alpha);
+            SolvePressureIncrement();
 
             // ------------------------------------------------------------
             // Step 3: velocity correction
             // ------------------------------------------------------------
-            CorrectVelocity(pc.alpha);
+            CorrectVelocity();
 
             // ------------------------------------------------------------
             // Step 4: pressure update
@@ -217,7 +210,7 @@ namespace nse {
         }
 
     private:
-        void SolvePressureIncrement(const double alpha) {
+        void SolvePressureIncrement() {
             B_ppe.Assemble();
 
             mfem::HypreParMatrix A;
@@ -245,7 +238,7 @@ namespace nse {
             A_ppe.RecoverFEMSolution(X, B_ppe, tlf.current.p);
         }
 
-        void CorrectVelocity(const double alpha) {
+        void CorrectVelocity() {
             mfem::Array<int> empty;
 
             B_vue.Assemble();

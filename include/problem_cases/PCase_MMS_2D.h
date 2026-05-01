@@ -436,7 +436,25 @@ namespace nse {
 
         void ApplyBC(NSEGridFields &fgf) override {
             fgf.u.ProjectBdrCoefficient(*exact_velocity, bdr_attr_u);
-            // fgf.p.ProjectBdrCoefficient(exact_pressure, bdr_attr_p);
+
+            // ------------------------------------------------------------------------
+            // Pressure point constraint / pressure pinning
+            mfem::ParFiniteElementSpace *pfes_p = fgf.p.ParFESpace();
+
+            // Project exact pressure only to get the exact value at the pinned tdof
+            mfem::ParGridFunction p_exact_gf(pfes_p);
+            p_exact_gf.ProjectCoefficient(*exact_pressure);
+
+            mfem::Vector p_true(fem.fespace_p->GetTrueVSize()); p_true = 0.;
+            mfem::Vector p_exact_true(fem.fespace_p->GetTrueVSize()); p_exact_true = 0.;
+            fgf.p.GetTrueDofs(p_true);
+            p_exact_gf.GetTrueDofs(p_exact_true);
+            for (int i = 0; i < ess_tdof_list_p.Size(); i++) {
+                const int tdof = ess_tdof_list_p[i];
+                p_true(tdof) = p_exact_true(tdof);
+            }
+
+            fgf.p.SetFromTrueDofs(p_true);
         }
 
         void SetAnalyticalSolution(NSEGridFields& fgf) override {

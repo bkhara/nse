@@ -134,7 +134,6 @@ namespace nse {
         FEMachinery& femach;
         TimeLevelFields& tlf;
         ProblemCase* pcase;
-        ProjectionScheme& scheme;
 
         mfem::ParNonlinearForm* nlf = nullptr;
         mutable mfem::PetscParMatrix* matJ = nullptr;
@@ -146,14 +145,12 @@ namespace nse {
             InputData& idata,
             FEMachinery& femach,
             TimeLevelFields& tlf,
-            ProblemCase* pcase,
-            ProjectionScheme& scheme)
+            ProblemCase* pcase)
             : mfem::Operator(femach.fespace_primal_u->GetTrueVSize()),
               idata(idata),
               femach(femach),
               tlf(tlf),
-              pcase(pcase),
-              scheme(scheme) {
+              pcase(pcase) {
             ess_tdof_list_u = pcase->ess_tdof_list_u;
 
             nlf = new mfem::ParNonlinearForm(femach.fespace_primal_u);
@@ -162,7 +159,6 @@ namespace nse {
                 new NSEProjMomentumVMSInteg(
                     idata,
                     tlf,
-                    scheme,
                     femach.vel_vdim,
                     femach.ordering,
                     pcase->forcing_rhs));

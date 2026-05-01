@@ -148,37 +148,37 @@ namespace nse {
     }
 
     struct ProjectionCoefficients {
-        double alpha; // coefficient multiplying u_star
-        double beta0; // u^n coefficient in history
-        double beta1; // u^{n-1} coefficient in history
-        double p0; // p^n coefficient in p_hat
-        double p1; // p^{n-1} coefficient in p_hat
+        double beta0 = 1.0; // dimensionless coefficient multiplying u^{n+1} or u_star
+        double beta1 = -1.0; // signed dimensionless coefficient multiplying u^n
+        double beta2 = 0.0; // signed dimensionless coefficient multiplying u^{n-1}
+        double p0 = 0.0; // p^n coefficient in p_hat
+        double p1 = 0.0; // p^{n-1} coefficient in p_hat
     };
 
-    inline ProjectionCoefficients GetProjectionCoefficients(
-        const ProjectionScheme scheme,
-        const double dt) {
+    inline ProjectionCoefficients GetProjectionCoefficients(const ProjectionScheme scheme) {
         ProjectionCoefficients c;
 
         if (scheme == ProjectionScheme::ChorinFirstOrder) {
-            c.alpha = 1.0 / dt;
-
-            c.beta0 = 1.0 / dt;
-            c.beta1 = 0.0;
+            // BDF1:
+            // (u^{n+1} - u^n) / dt
+            c.beta0 = 1.0;
+            c.beta1 = -1.0;
+            c.beta2 = 0.0;
 
             // Classic Chorin has no pressure in the tentative velocity step.
             c.p0 = 0.0;
             c.p1 = 0.0;
         }
         else {
-            c.alpha = 3.0 / (2.0 * dt);
-
-            c.beta0 = 4.0 / (2.0 * dt);
-            c.beta1 = -1.0 / (2.0 * dt);
+            // BDF2:
+            // (3/2 u^{n+1} - 2 u^n + 1/2 u^{n-1}) / dt
+            c.beta0 = 1.5;
+            c.beta1 = -2.0;
+            c.beta2 = 0.5;
 
             // Second-order pressure extrapolation.
-            c.p0 = 2.0;
-            c.p1 = -1.0;
+            c.p0 = 1.0;
+            c.p1 = 0.0;
         }
 
         return c;
@@ -2663,7 +2663,6 @@ namespace nse {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
-        const ProjectionScheme& scheme;
         const int vdim;
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
@@ -2683,13 +2682,11 @@ namespace nse {
         NSEProjMomentumVMSInteg(
             const InputData& idata,
             const TimeLevelFields& tlf,
-            const ProjectionScheme& scheme,
             const int vdim,
             const mfem::Ordering::Type ordering,
             mfem::VectorCoefficient* f_coeff = nullptr)
             : idata(idata),
               tlf(tlf),
-              scheme(scheme),
               vdim(vdim),
               ordering(ordering),
               f_coeff(f_coeff) {
@@ -2792,7 +2789,7 @@ namespace nse {
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
 
-            const ProjectionCoefficients pc = GetProjectionCoefficients(scheme, dt);
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
                 const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
@@ -2812,7 +2809,7 @@ namespace nse {
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
-                    u_hist(c) = pc.beta0 * u_n(c) + pc.beta1 * u_nm1(c);
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
                 }
 
                 double p_hat = 0.0;
@@ -2850,8 +2847,7 @@ namespace nse {
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
                     ns_res(i) =
-                        pc.alpha * u(i)
-                        - u_hist(i)
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         + grad_p_hat(i)
                         - nu * lap_u(i)
@@ -2883,7 +2879,7 @@ namespace nse {
                         // - N(a) * f
                         // ---------------------------------------------------------
 
-                        elvec(ia) += N(a) * (pc.alpha * u(c) - u_hist(c)) * wdet;
+                        elvec(ia) += N(a) * ((pc.beta0 * u(c) + u_hist(c)) / dt) * wdet;
 
                         if (!idata.flow_properties.disable_convection) {
                             elvec(ia) += N(a) * conv(c) * wdet;
@@ -2968,7 +2964,8 @@ namespace nse {
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
 
-            const ProjectionCoefficients pc = GetProjectionCoefficients(scheme, dt);
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
+            const double alpha = pc.beta0 / dt;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
                 const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
@@ -2990,7 +2987,7 @@ namespace nse {
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
-                    u_hist(c) = pc.beta0 * u_n(c) + pc.beta1 * u_nm1(c);
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
                 }
 
                 double p_hat = 0.0;
@@ -3020,8 +3017,7 @@ namespace nse {
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
                     ns_res(i) =
-                        pc.alpha * u(i)
-                        - u_hist(i)
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         + grad_p_hat(i)
                         - nu * lap_u(i)
@@ -3065,8 +3061,7 @@ namespace nse {
                             const int ia = VDofIndex(ndof, vdim, a, c, ordering);
                             const int ib = VDofIndex(ndof, vdim, b, c, ordering);
 
-                            // transient/mass
-                            elmat(ia, ib) += pc.alpha * N(a) * N(b) * wdet;
+                            elmat(ia, ib) += alpha * N(a) * N(b) * wdet;
 
                             // diffusion
                             elmat(ia, ib) += nu * gradNa_dot_gradNb * wdet;
@@ -3135,7 +3130,7 @@ namespace nse {
                                 if (c == k) {
                                     val +=
                                         crossTermVelocityPart * tauM *
-                                        (pc.alpha * N(b) + conv_b - diff_J);
+                                        (alpha * N(b) + conv_b - diff_J);
                                 }
 
                                 val +=
@@ -3188,7 +3183,7 @@ namespace nse {
                                     -grad_u(c, k) *
                                     N(a) *
                                     tauM *
-                                    (pc.alpha * N(b) + conv_b - diff_J);
+                                    (alpha * N(b) + conv_b - diff_J);
 
                                 // old diagonal contribution:
                                 //
@@ -3238,7 +3233,7 @@ namespace nse {
                                     val +=
                                         -crossTermFineScalePart *
                                         tauM *
-                                        (pc.alpha * N(b) + conv_b - diff_J);
+                                        (alpha * N(b) + conv_b - diff_J);
                                 }
 
                                 // old second group:
@@ -3274,7 +3269,7 @@ namespace nse {
                                     ns_res(c) *
                                     dN(a, k) *
                                     tauM *
-                                    (pc.alpha * N(b) + conv_b - diff_J);
+                                    (alpha * N(b) + conv_b - diff_J);
 
                                 elmat(ia, ib) += val * wdet;
                             }
@@ -3289,7 +3284,6 @@ namespace nse {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
-        const ProjectionScheme& scheme;
         const int vdim;
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
@@ -3300,13 +3294,11 @@ namespace nse {
         NSEProjVUERHSInteg(
             const InputData& idata,
             const TimeLevelFields& tlf,
-            const ProjectionScheme& scheme,
             const int vdim,
             const mfem::Ordering::Type ordering,
             mfem::VectorCoefficient* f_coeff = nullptr)
             : idata(idata),
               tlf(tlf),
-              scheme(scheme),
               vdim(vdim),
               ordering(ordering),
               f_coeff(f_coeff) {
@@ -3364,9 +3356,9 @@ namespace nse {
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
 
-            const ProjectionCoefficients pc = GetProjectionCoefficients(scheme, dt);
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
-            const double sigma = pc.alpha;
+            const double sigma = pc.beta0 / dt;
             const double coef_p = 1.0 / sigma;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
@@ -3393,7 +3385,7 @@ namespace nse {
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
-                    u_hist(c) = pc.beta0 * u_n(c) + pc.beta1 * u_nm1(c);
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
                 }
 
                 f.SetSize(vdim);
@@ -3420,8 +3412,7 @@ namespace nse {
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
                     ns_res(i) =
-                        pc.alpha * u(i)
-                        - u_hist(i)
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         - nu * lap_u(i)
                         + grad_p_n(i)
@@ -3449,7 +3440,6 @@ namespace nse {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
-        const ProjectionScheme& scheme;
         const int vdim;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
@@ -3459,12 +3449,10 @@ namespace nse {
         NSEProjPPERHSInteg(
             const InputData& idata,
             const TimeLevelFields& tlf,
-            const ProjectionScheme& scheme,
             const int vdim,
             mfem::VectorCoefficient* f_coeff = nullptr)
             : idata(idata),
               tlf(tlf),
-              scheme(scheme),
               vdim(vdim),
               f_coeff(f_coeff) {
         }
@@ -3521,9 +3509,9 @@ namespace nse {
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
 
-            const ProjectionCoefficients pc = GetProjectionCoefficients(scheme, dt);
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
-            const double sigma = pc.alpha;
+            const double sigma = pc.beta0 / dt;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
                 const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
@@ -3549,7 +3537,7 @@ namespace nse {
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
-                    u_hist(c) = pc.beta0 * u_n(c) + pc.beta1 * u_nm1(c);
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
                 }
 
                 f.SetSize(vdim);
@@ -3576,8 +3564,7 @@ namespace nse {
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
                     ns_res(i) =
-                        pc.alpha * u(i)
-                        - u_hist(i)
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         - nu * lap_u(i)
                         + grad_p_n(i)
