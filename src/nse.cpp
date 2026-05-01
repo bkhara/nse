@@ -5,6 +5,7 @@
 #include "mfem.hpp"
 #include <fstream>
 #include <iostream>
+#include <unistd.h>
 
 #ifndef MFEM_USE_PETSC
 #error This example requires that MFEM is built with MFEM_USE_PETSC=YES
@@ -45,6 +46,19 @@ int main(int argc, char *argv[]) {
     MFEMInitializePetsc(&argc, &argv, petscrc_file, nullptr);
 
     {
+
+        // some checks regarding the parallel launch
+        {
+            char hostname[256];
+            gethostname(hostname, sizeof(hostname));
+
+            int rank, size;
+            MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+            MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+            std::cout << "Rank " << rank << " of " << size << " on " << hostname << std::endl;
+        }
+
         nse::ParallelTimer t_solve(MPI_COMM_WORLD, "solve");
         nse::ParallelTimer t_total(MPI_COMM_WORLD, "total");
 

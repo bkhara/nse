@@ -57,7 +57,7 @@ target_link_libraries(core INTERFACE
 
 # COMPILE the new source files below
 set(MY_SOURCES
-        src/frac.cpp
+        src/nse.cpp
         src/FEMachinery.cpp
         src/TimeLevelFields.cpp
         src/Checkpointing.cpp
