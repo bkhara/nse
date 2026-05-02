@@ -146,15 +146,16 @@ namespace nse {
 
     class MMS2DPressure_Type2 : public mfem::Coefficient {
     private:
+        double lambda_;
         double omega_;
 
     public:
-        explicit MMS2DPressure_Type2(double omega)
-            : omega_(omega) {
+        MMS2DPressure_Type2(double lambda, double omega)
+            : lambda_(lambda), omega_(omega) {
         }
 
-        double Eval(mfem::ElementTransformation& T,
-                    const mfem::IntegrationPoint& ip) override {
+        double Eval(mfem::ElementTransformation &T,
+                    const mfem::IntegrationPoint &ip) override {
             mfem::Vector x(2);
             T.Transform(ip, x);
 
@@ -164,8 +165,8 @@ namespace nse {
             const double t = GetTime();
             const double ct = std::cos(omega_ * t);
 
-            const double sx = std::sin(M_PI * X);
-            const double sy = std::sin(M_PI * Y);
+            const double sx = std::sin(lambda_ * X);
+            const double sy = std::sin(lambda_ * Y);
 
             return sx * sy * ct + 2.0;
         }
@@ -173,16 +174,19 @@ namespace nse {
 
     class MMS2DVelocity_Type2 : public mfem::VectorCoefficient {
     private:
+        double lambda_;
         double omega_;
 
     public:
-        explicit MMS2DVelocity_Type2(double omega)
-            : mfem::VectorCoefficient(2), omega_(omega) {
+        MMS2DVelocity_Type2(double lambda, double omega)
+            : mfem::VectorCoefficient(2),
+              lambda_(lambda),
+              omega_(omega) {
         }
 
-        void Eval(mfem::Vector& u,
-                  mfem::ElementTransformation& T,
-                  const mfem::IntegrationPoint& ip) override {
+        void Eval(mfem::Vector &u,
+                  mfem::ElementTransformation &T,
+                  const mfem::IntegrationPoint &ip) override {
             mfem::Vector x(2);
             T.Transform(ip, x);
 
@@ -192,10 +196,10 @@ namespace nse {
             const double t = GetTime();
             const double st = std::sin(omega_ * t);
 
-            const double sx = std::sin(M_PI * X);
-            const double cx = std::cos(M_PI * X);
-            const double sy = std::sin(M_PI * Y);
-            const double cy = std::cos(M_PI * Y);
+            const double sx = std::sin(lambda_ * X);
+            const double cx = std::cos(lambda_ * X);
+            const double sy = std::sin(lambda_ * Y);
+            const double cy = std::cos(lambda_ * Y);
 
             u.SetSize(2);
 
@@ -207,22 +211,25 @@ namespace nse {
     class MMS2DForcing_Type2 : public mfem::VectorCoefficient {
     private:
         double nu_;
+        double lambda_;
         double omega_;
         bool disable_convection_;
 
     public:
-        MMS2DForcing_Type2(double omega,
+        MMS2DForcing_Type2(double lambda,
+                           double omega,
                            double nu,
                            bool disable_convection = false)
             : mfem::VectorCoefficient(2),
               nu_(nu),
+              lambda_(lambda),
               omega_(omega),
               disable_convection_(disable_convection) {
         }
 
-        void Eval(mfem::Vector& f,
-                  mfem::ElementTransformation& T,
-                  const mfem::IntegrationPoint& ip) override {
+        void Eval(mfem::Vector &f,
+                  mfem::ElementTransformation &T,
+                  const mfem::IntegrationPoint &ip) override {
             mfem::Vector x(2);
             T.Transform(ip, x);
 
@@ -234,19 +241,18 @@ namespace nse {
             const double st = std::sin(omega_ * t);
             const double ct = std::cos(omega_ * t);
 
-            const double sx = std::sin(M_PI * X);
-            const double cx = std::cos(M_PI * X);
-            const double sy = std::sin(M_PI * Y);
-            const double cy = std::cos(M_PI * Y);
+            const double sx = std::sin(lambda_ * X);
+            const double cx = std::cos(lambda_ * X);
+            const double sy = std::sin(lambda_ * Y);
+            const double cy = std::cos(lambda_ * Y);
 
             f.SetSize(2);
 
-            // ------------------------------------------------------------
             // Manufactured solution:
             //
-            // u1 =  sin(pi x) cos(pi y) sin(omega t) + 2
-            // u2 = -cos(pi x) sin(pi y) sin(omega t) + 2
-            // p  =  sin(pi x) sin(pi y) cos(omega t) + 2
+            // u1 =  sin(lambda x) cos(lambda y) sin(omega t) + 2
+            // u2 = -cos(lambda x) sin(lambda y) sin(omega t) + 2
+            // p  =  sin(lambda x) sin(lambda y) cos(omega t) + 2
             //
             // PDE:
             //
@@ -255,32 +261,16 @@ namespace nse {
             // Since div(u) = 0,
             //
             // div(u \otimes u) = (u . grad) u.
-            // ------------------------------------------------------------
-
-            // Time derivative:
-            //
-            // u1_t =  omega sin(pi x) cos(pi y) cos(omega t)
-            // u2_t = -omega cos(pi x) sin(pi y) cos(omega t)
-
-            // Diffusion:
-            //
-            // Delta u1 = -2 pi^2 sin(pi x) cos(pi y) sin(omega t)
-            // Delta u2 =  2 pi^2 cos(pi x) sin(pi y) sin(omega t)
-
-            // Pressure gradient:
-            //
-            // p_x = pi cos(pi x) sin(pi y) cos(omega t)
-            // p_y = pi sin(pi x) cos(pi y) cos(omega t)
 
             f[0] =
-                omega_ * sx * cy * ct
-                + 2.0 * nu_ * M_PI * M_PI * sx * cy * st
-                + M_PI * cx * sy * ct;
+                    omega_ * sx * cy * ct
+                    + 2.0 * nu_ * lambda_ * lambda_ * sx * cy * st
+                    + lambda_ * cx * sy * ct;
 
             f[1] =
-                -omega_ * cx * sy * ct
-                - 2.0 * nu_ * M_PI * M_PI * cx * sy * st
-                + M_PI * sx * cy * ct;
+                    -omega_ * cx * sy * ct
+                    - 2.0 * nu_ * lambda_ * lambda_ * cx * sy * st
+                    + lambda_ * sx * cy * ct;
 
             if (!disable_convection_) {
                 // Velocity values
@@ -288,11 +278,11 @@ namespace nse {
                 const double u2 = -cx * sy * st + 2.0;
 
                 // Velocity gradients
-                const double u1_x = M_PI * cx * cy * st;
-                const double u1_y = -M_PI * sx * sy * st;
+                const double u1_x = lambda_ * cx * cy * st;
+                const double u1_y = -lambda_ * sx * sy * st;
 
-                const double u2_x = M_PI * sx * sy * st;
-                const double u2_y = -M_PI * cx * cy * st;
+                const double u2_x = lambda_ * sx * sy * st;
+                const double u2_y = -lambda_ * cx * cy * st;
 
                 // Conservative convection:
                 //
@@ -337,9 +327,9 @@ namespace nse {
                 exact_pressure = new MMS2DPressure_Type1(omega);
                 forcing_rhs = new MMS2DForcing_Type1(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
             } else if (idata.mms2d_inputs.mms_type == 2) {
-                exact_velocity = new MMS2DVelocity_Type2(omega);
-                exact_pressure = new MMS2DPressure_Type2(omega);
-                forcing_rhs = new MMS2DForcing_Type2(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
+                exact_velocity = new MMS2DVelocity_Type2(omega, 2*omega);
+                exact_pressure = new MMS2DPressure_Type2(omega, 2*omega);
+                forcing_rhs = new MMS2DForcing_Type2(omega, 2*omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
             }
 
             // check parameters before proceeding
@@ -432,6 +422,8 @@ namespace nse {
         void SetIC(NSEGridFields& fgf) override {
             exact_velocity->SetTime(0.);
             fgf.u.ProjectCoefficient(*exact_velocity);
+            exact_pressure->SetTime(0.);
+            fgf.p.ProjectCoefficient(*exact_pressure);
         }
 
         void ApplyBC(NSEGridFields &fgf) override {

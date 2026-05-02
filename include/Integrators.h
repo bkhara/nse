@@ -99,6 +99,7 @@ namespace nse {
 
         mfem::DenseMatrix ksiX(dim, dim);
         mfem::CalcInverse(J, ksiX);
+        ksiX *= 2.0;
 
         mfem::DenseMatrix Ge(dim, dim);
         Ge = 0.0;
@@ -151,7 +152,7 @@ namespace nse {
         double beta0 = 1.0; // dimensionless coefficient multiplying u^{n+1} or u_star
         double beta1 = -1.0; // signed dimensionless coefficient multiplying u^n
         double beta2 = 0.0; // signed dimensionless coefficient multiplying u^{n-1}
-        double p0 = 0.0; // p^n coefficient in p_hat
+        double p0 = 1.0; // p^n coefficient in p_hat
         double p1 = 0.0; // p^{n-1} coefficient in p_hat
     };
 
@@ -166,7 +167,7 @@ namespace nse {
             c.beta2 = 0.0;
 
             // Classic Chorin has no pressure in the tentative velocity step.
-            c.p0 = 0.0;
+            c.p0 = 1.0;
             c.p1 = 0.0;
         }
         else {
