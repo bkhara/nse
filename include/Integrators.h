@@ -3360,7 +3360,7 @@ namespace nse {
             const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
             const double sigma = pc.beta0 / dt;
-            const double coef_p = 1.0 / sigma;
+            const double sigmainv = 1.0 / sigma;
 
             for (int iq = 0; iq < ir->GetNPoints(); iq++) {
                 const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
@@ -3428,7 +3428,7 @@ namespace nse {
                             N(a) * (u(c) - tauM * ns_res(c)) * wdet;
 
                         elvec(ia) +=
-                            -coef_p * N(a) *
+                            -sigmainv * N(a) *
                             (grad_p_curr(c) - grad_p_n(c)) *
                             wdet;
                     }
