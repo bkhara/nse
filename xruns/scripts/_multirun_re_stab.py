@@ -83,6 +83,9 @@ def case_dir_name(reynolds_number, stab_scheme):
     return f"re-{safe_case_float_string(reynolds_number)}-stab_{stab_scheme}"
 
 
+CONSOLIDATED_DIRNAME = "consolidated"
+
+
 def solve_time_filename(stab_scheme):
     return f"solve_times_stab_{stab_scheme}.txt"
 
@@ -259,8 +262,11 @@ class ReStabRuns(object):
         )
 
     def setup_consolidation_files(self):
+        consolidated_dir = os.path.join(self.top_path, CONSOLIDATED_DIRNAME)
+        os.makedirs(consolidated_dir, exist_ok=True)
+
         for stab_scheme in STAB_SCHEMES:
-            with open(os.path.join(self.top_path, solve_time_filename(stab_scheme)), "w") as file:
+            with open(os.path.join(consolidated_dir, solve_time_filename(stab_scheme)), "w") as file:
                 file.write("Re,solve_time\n")
 
     def atomic_consolidation(self):
@@ -268,14 +274,15 @@ class ReStabRuns(object):
         stab_scheme = self.idata.stab_scheme
         filename = solve_time_filename(stab_scheme)
 
-        pattern = r'\[TIME\] Solve-time \(global_total_sec avg\):\s+([0-9.eE+-]+)'
+        pattern = r'\[solve\] n=\d+, min=[0-9.eE+-]+ sec, max=[0-9.eE+-]+ sec, sum=[0-9.eE+-]+ sec, avg=([0-9.eE+-]+) sec'
         out_file_path = egf.Outfile
         if os.path.isfile(out_file_path):
             with open(out_file_path, 'r') as outfile:
                 for line in outfile:
                     match = re.search(pattern, line)
                     if match:
-                        with open(os.path.join(self.top_path, filename), 'a') as file:
+                        consolidated_path = os.path.join(self.top_path, CONSOLIDATED_DIRNAME, filename)
+                        with open(consolidated_path, 'a') as file:
                             file.write(f"{Re},{match.group(1)}\n")
                         break
 

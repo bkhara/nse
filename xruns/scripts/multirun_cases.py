@@ -14,21 +14,13 @@ from _multirun_re_stab import (
     get_args,
     get_run_script_filename,
     set_project_path_in_script,
+    CONSOLIDATED_DIRNAME,
 )
 
 
 class LDCReStabRuns(ReStabRuns):
-    case_name = "ldc"
-
-    rev = [
-        100,
-        400,
-        1000,
-        3200,
-        5000,
-        7500,
-        10000,
-    ]
+    case_name = CaseNames.LDC
+    rev = REYNOLDS_SWEEP[case_name]
 
     @staticmethod
     def decide_time_span_and_step(re_value):
@@ -160,21 +152,13 @@ class LDCReStabRuns(ReStabRuns):
         )
 
 
-class FPCReStabRuns(ReStabRuns):
-    case_name = "fpc"
+def consolidated_force_filename(stab_scheme):
+    return f"force_summary_stab_{stab_scheme}.csv"
 
-    rev = [
-        1,
-        15,
-        30,
-        60,
-        100,
-        150,
-        200,
-        250,
-        300,
-        400,
-    ]
+
+class FPCReStabRuns(ReStabRuns):
+    case_name = CaseNames.FPC
+    rev = REYNOLDS_SWEEP[case_name]
 
     @staticmethod
     def decide_time_span_and_step(re_value):
@@ -208,13 +192,29 @@ class FPCReStabRuns(ReStabRuns):
             f"Re={Re}, stab_scheme={stab_scheme}{bcolors.ENDC}"
         )
 
+        self.compute_and_write_force_summary()
+
+    def compute_and_write_force_summary(self):
+        """
+        Find the force time series, run the periodicity/Strouhal analysis,
+        and (re)write the per-case `..._force_summary.txt` file.
+
+        This is the single implementation shared by `pp` (which just wants
+        the per-case file refreshed) and `cons` (which additionally rolls
+        the result up into the top-level consolidated table).
+
+        Returns the summary dict, or None if no force file was found.
+        """
+        Re = self.idata.Re
+        stab_scheme = self.idata.stab_scheme
+
         force_file = self.find_force_file()
         if force_file is None:
             print(
                 f"{bcolors.WARNING}No force file found for "
                 f"Re={Re}, stab_scheme={stab_scheme}{bcolors.ENDC}"
             )
-            return
+            return None
 
         summary = self.analyze_force_timeseries(force_file)
 
@@ -222,6 +222,69 @@ class FPCReStabRuns(ReStabRuns):
         self.write_force_summary(summary, outname)
 
         print(f"{bcolors.OKGREEN}Wrote {outname}{bcolors.ENDC}")
+
+        return summary
+
+    def setup_consolidation_files(self):
+        # Also creates the top-level `consolidated/` directory.
+        super().setup_consolidation_files()
+
+        consolidated_dir = os.path.join(self.top_path, CONSOLIDATED_DIRNAME)
+        for stab_scheme in STAB_SCHEMES:
+            path = os.path.join(consolidated_dir, consolidated_force_filename(stab_scheme))
+            with open(path, "w") as f:
+                f.write("Re,Cd,Cl,St\n")
+
+    def atomic_consolidation(self):
+        super().atomic_consolidation()
+        self.consolidate_force_summary()
+
+    def consolidate_force_summary(self):
+        Re = self.idata.Re
+        stab_scheme = self.idata.stab_scheme
+
+        try:
+            summary = self.compute_and_write_force_summary()
+        except RuntimeError as e:
+            print(
+                f"{bcolors.WARNING}Could not analyze forces for "
+                f"Re={Re}, stab_scheme={stab_scheme}: {e}{bcolors.ENDC}"
+            )
+            return
+
+        if summary is None:
+            return
+
+        # Pull the numbers back out of the just-written per-case summary
+        # file, rather than reusing the in-memory dict, so the consolidated
+        # table always reflects exactly what's on disk in each case dir.
+        summary_filename = f"re-{Re}-stab_{stab_scheme}_force_summary.txt"
+        parsed = self.read_force_summary_file(summary_filename)
+
+        consolidated_path = os.path.join(
+            self.top_path, CONSOLIDATED_DIRNAME, consolidated_force_filename(stab_scheme)
+        )
+        with open(consolidated_path, "a") as f:
+            f.write(
+                f"{parsed['re']},{parsed['mean_cd']},{parsed['mean_cl']},{parsed['strouhal']}\n"
+            )
+
+        print(
+            f"{bcolors.OKGREEN}Consolidated Re={Re}, stab_scheme={stab_scheme} "
+            f"-> {consolidated_path}{bcolors.ENDC}"
+        )
+
+    @staticmethod
+    def read_force_summary_file(path):
+        data = {}
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                data[key] = value
+        return data
 
     @staticmethod
     def find_force_file():
@@ -237,6 +300,7 @@ class FPCReStabRuns(ReStabRuns):
         import os
 
         candidates = [
+            "forces.txt",
             "forces.csv",
             "force.csv",
             "force_coefficients.csv",

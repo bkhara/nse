@@ -6,3 +6,4 @@ user.cmake
 xruns/results
 zruns/
 *.msh
+__pycache__/
