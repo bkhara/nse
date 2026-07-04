@@ -66,12 +66,34 @@ namespace nse {
          */
         virtual void SetIC(NSEGridFields& fgf) {}
 
-        /** Project the Dirichlet BCs onto
-         * the given gridfields. The particular gridfunction where the BCs
-         * will be filled might differ from case to case
+        /** Project the velocity Dirichlet BCs onto the given gridfields
+         * (inflow, no-slip walls, etc.)
          * @param fgf
          */
-        virtual void ApplyBC(NSEGridFields &fgf) {}
+        virtual void ApplyVelocityBC(NSEGridFields &fgf) {}
+
+        /** Project the pressure Dirichlet BCs onto the given gridfields
+         * (e.g. an outlet pin for the projection method, or a single-point
+         * pin for a fully enclosed domain).
+         * @param fgf
+         */
+        virtual void ApplyPressureBC(NSEGridFields &fgf) {}
+
+        /** Convenience helper that applies both velocity and pressure BCs
+         * together. The coupled solver, which solves for (u, p)
+         * simultaneously, calls this once per step. The uncoupled
+         * (projection-method) solver instead calls ApplyVelocityBC() and
+         * ApplyPressureBC() individually, at the point in its step sequence
+         * where each is actually needed (velocity BC before the tentative
+         * velocity solve, pressure BC before the pressure Poisson solve).
+         * Not virtual: derived classes should override the two functions
+         * above, not this one.
+         * @param fgf
+         */
+        void ApplyBC(NSEGridFields &fgf) {
+            ApplyVelocityBC(fgf);
+            ApplyPressureBC(fgf);
+        }
 
         /** This is a helper function to set the time
          * in various FunctionCoefficients owned by an instance of ProblemCase

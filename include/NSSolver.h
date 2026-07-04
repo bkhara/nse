@@ -148,7 +148,14 @@ namespace nse {
 
             // set up operators for PPE
             {
-                A_ppe.AddDomainIntegrator(new mfem::DiffusionIntegrator);
+                // Use the same quadrature rule as the PPE RHS integrator
+                // (NSEProjVMSIntegPPERHS*Form), rather than MFEM's own
+                // default order for DiffusionIntegrator, so the LHS and RHS
+                // of the pressure Poisson solve are assembled consistently.
+                auto* ppe_diffusion = new mfem::DiffusionIntegrator;
+                ppe_diffusion->SetIntRule(&fem.qspace->GetIntRule(0));
+
+                A_ppe.AddDomainIntegrator(ppe_diffusion);
                 A_ppe.Assemble();
                 A_ppe.Finalize();
 
@@ -164,7 +171,13 @@ namespace nse {
 
             // set up operators for VUE
             {
-                A_vue.AddDomainIntegrator(new mfem::VectorMassIntegrator);
+                // Same reasoning as the PPE operator above: match the
+                // quadrature used by NSEProjVMSIntegVUERHS*Form instead of
+                // MFEM's default order for VectorMassIntegrator.
+                auto* vue_mass = new mfem::VectorMassIntegrator;
+                vue_mass->SetIntRule(&fem.qspace->GetIntRule(0));
+
+                A_vue.AddDomainIntegrator(vue_mass);
                 A_vue.Assemble();
                 A_vue.Finalize();
 
@@ -191,7 +204,7 @@ namespace nse {
             // ------------------------------------------------------------
             // Step 1: tentative velocity solve
             // ------------------------------------------------------------
-            pcase->ApplyBC(tlf.current);
+            pcase->ApplyVelocityBC(tlf.current);
 
             {
                 mfem::Vector rhs; //(fem.fespace_primal_u->GetTrueVSize());
@@ -208,6 +221,7 @@ namespace nse {
             // ------------------------------------------------------------
             // Step 2: pressure increment Poisson solve
             // ------------------------------------------------------------
+            pcase->ApplyPressureBC(tlf.current);
             SolvePressureIncrement();
 
             // ------------------------------------------------------------

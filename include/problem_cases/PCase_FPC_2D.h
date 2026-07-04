@@ -94,13 +94,21 @@ namespace nse {
             if (idata.method_config.is_coupled()) {
                 ess_tdof_list_p.SetSize(0);
             } else if (idata.method_config.is_uncoupled()) {
-                ess_tdof_list_p.SetSize(fem.mesh->bdr_attributes.Max());
-                ess_tdof_list_p = 0.;
-                ess_tdof_list_p[OUTLET - 1] = 1;
+                // Pin pressure on the outlet boundary for the projection
+                // method's pressure Poisson solve. This must be an actual
+                // list of pressure true DOFs (via GetEssentialTrueDofs), not
+                // the boundary-attribute marker itself -- the marker only
+                // says which *attribute* is the outlet, it is not indexed by
+                // true DOF number.
+                Array<int> outlet_bdr_marker(fem.mesh->bdr_attributes.Max());
+                outlet_bdr_marker = 0;
+                outlet_bdr_marker[OUTLET - 1] = 1;
+
+                fem.fespace_p->GetEssentialTrueDofs(outlet_bdr_marker, ess_tdof_list_p);
             }
         }
 
-        void ApplyBC(NSEGridFields& fgf) override {
+        void ApplyVelocityBC(NSEGridFields& fgf) override {
             const double t = tlf.GetTime();
             const double dt = tlf.GetTimeStep();
 
@@ -195,8 +203,30 @@ namespace nse {
             // Outlet:
             // Do not project velocity here for a standard open/outflow boundary.
             // Typically handled by natural traction / do-nothing condition, or by
-            // fixing pressure elsewhere.
+            // fixing pressure elsewhere (see ApplyPressureBC()).
             // ------------------------------------------------------------------
+        }
+
+        void ApplyPressureBC(NSEGridFields& fgf) override {
+            // For the uncoupled/projection solver, the outlet pressure DOFs
+            // (ess_tdof_list_p, built in ObtainBoundaryDOFs) are held at
+            // p = 0 here explicitly, rather than relying on the pressure
+            // field's zero initial condition never being overwritten.
+            //
+            // The coupled solver leaves ess_tdof_list_p empty (see
+            // ObtainBoundaryDOFs) and relies on the natural/do-nothing
+            // outlet condition instead, so there is nothing to project here
+            // in that case.
+            if (!idata.method_config.is_uncoupled()) {
+                return;
+            }
+
+            Array<int> bdr_attr(fem.mesh->bdr_attributes.Max());
+            bdr_attr = 0;
+            bdr_attr[OUTLET - 1] = 1;
+
+            ConstantCoefficient zero(0.0);
+            fgf.p.ProjectBdrCoefficient(zero, bdr_attr);
         }
 
         void SetTime(double const t) override {

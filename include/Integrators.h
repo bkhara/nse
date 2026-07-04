@@ -58,6 +58,41 @@ namespace nse {
         return val;
     }
 
+    // Shared helper: evaluate p_hat = p0*p^n + p1*p^{n-1} and its gradient
+    // at the current integration point, using the coefficients from
+    // GetProjectionCoefficients(). This is "p_h*" in the projection-method
+    // algorithm (Require: extrapolated pressure p_h*), and every integrator
+    // that needs it (momentum predictor, VUE RHS, PPE RHS) must use this
+    // same helper so that all three steps of a given time step agree on
+    // p_h* -- currently p1 == 0 for both defined schemes, so p_hat == p^n
+    // numerically, but the three integrators should not each independently
+    // decide how to combine prev_1/prev_2 pressure.
+    inline void EvalPressureHatAndGradAtIP(const TimeLevelFields& tlf,
+                                           mfem::ElementTransformation& T,
+                                           const mfem::IntegrationPoint& ip,
+                                           const ProjectionCoefficients& pc,
+                                           const int vdim,
+                                           double& p_hat,
+                                           mfem::Vector& grad_p_hat) {
+        grad_p_hat.SetSize(vdim);
+        grad_p_hat = 0.0;
+
+        const double p_n = tlf.prev_1.p.GetValue(T, ip);
+        const double p_nm1 = tlf.prev_2.p.GetValue(T, ip);
+
+        p_hat = pc.p0 * p_n + pc.p1 * p_nm1;
+
+        mfem::Vector grad_p_n(vdim);
+        mfem::Vector grad_p_nm1(vdim);
+
+        tlf.prev_1.p.GetGradient(T, grad_p_n);
+        tlf.prev_2.p.GetGradient(T, grad_p_nm1);
+
+        for (int c = 0; c < vdim; c++) {
+            grad_p_hat(c) = pc.p0 * grad_p_n(c) + pc.p1 * grad_p_nm1(c);
+        }
+    }
+
     inline void EvalConvection(const mfem::Vector& u,
                                const mfem::DenseMatrix& grad_u,
                                mfem::Vector& conv) {
@@ -148,42 +183,6 @@ namespace nse {
         tauC = 1.0 / (tauM * g_g + 1.0e-30);
     }
 
-    struct ProjectionCoefficients {
-        double beta0 = 1.0; // dimensionless coefficient multiplying u^{n+1} or u_star
-        double beta1 = -1.0; // signed dimensionless coefficient multiplying u^n
-        double beta2 = 0.0; // signed dimensionless coefficient multiplying u^{n-1}
-        double p0 = 1.0; // p^n coefficient in p_hat
-        double p1 = 0.0; // p^{n-1} coefficient in p_hat
-    };
-
-    inline ProjectionCoefficients GetProjectionCoefficients(const ProjectionScheme scheme) {
-        ProjectionCoefficients c;
-
-        if (scheme == ProjectionScheme::ChorinFirstOrder) {
-            // BDF1:
-            // (u^{n+1} - u^n) / dt
-            c.beta0 = 1.0;
-            c.beta1 = -1.0;
-            c.beta2 = 0.0;
-
-            // Classic Chorin has no pressure in the tentative velocity step.
-            c.p0 = 1.0;
-            c.p1 = 0.0;
-        }
-        else {
-            // BDF2:
-            // (3/2 u^{n+1} - 2 u^n + 1/2 u^{n-1}) / dt
-            c.beta0 = 1.5;
-            c.beta1 = -2.0;
-            c.beta2 = 0.5;
-
-            // Second-order pressure extrapolation.
-            c.p0 = 1.0;
-            c.p1 = 0.0;
-        }
-
-        return c;
-    }
     class NSEIntegratorBase : public mfem::BlockNonlinearFormIntegrator {
     protected:
         const InputData &idata;
@@ -2704,23 +2703,11 @@ namespace nse {
                                         const ProjectionCoefficients& pc,
                                         double& p_hat,
                                         mfem::Vector& grad_p_hat) const {
-            grad_p_hat.SetSize(vdim);
-            grad_p_hat = 0.0;
-
-            const double p_n = tlf.prev_1.p.GetValue(T, ip);
-            const double p_nm1 = tlf.prev_2.p.GetValue(T, ip);
-
-            p_hat = pc.p0 * p_n + pc.p1 * p_nm1;
-
-            mfem::Vector grad_p_n(vdim);
-            mfem::Vector grad_p_nm1(vdim);
-
-            tlf.prev_1.p.GetGradient(T, grad_p_n);
-            tlf.prev_2.p.GetGradient(T, grad_p_nm1);
-
-            for (int c = 0; c < vdim; c++) {
-                grad_p_hat(c) = pc.p0 * grad_p_n(c) + pc.p1 * grad_p_nm1(c);
-            }
+            // Delegates to the shared free function (InputData.h /
+            // Integrators.h) so that the momentum predictor, VUE RHS, and
+            // PPE RHS integrators (conv-form and div-form alike) all
+            // compute p_h* identically.
+            nse::EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
         }
 
         void EvalVectorLaplacianAtIP(const mfem::FiniteElement& el,
@@ -3347,7 +3334,7 @@ namespace nse {
             mfem::Vector conv(vdim);
             mfem::Vector lap_u(vdim);
             mfem::Vector grad_p_curr(vdim);
-            mfem::Vector grad_p_n(vdim);
+            mfem::Vector grad_p_hat(vdim);
             mfem::Vector ns_res(vdim);
 
             const int e = T.ElementNo;
@@ -3378,9 +3365,13 @@ namespace nse {
                 // Current velocity gradient.
                 tlf.current.u.GetVectorGradient(T, grad_u);
 
-                // Current and previous pressure gradients.
+                // Current pressure gradient, and p_h* = p0*p^n + p1*p^{n-1}
+                // (same helper the momentum predictor uses, so all three
+                // projection steps agree on p_h*).
                 tlf.current.p.GetGradient(T, grad_p_curr);
-                tlf.prev_1.p.GetGradient(T, grad_p_n);
+
+                double p_hat = 0.0;
+                EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
                 EvalVectorLaplacianAtIP(T, ip, lap_u);
 
@@ -3416,7 +3407,7 @@ namespace nse {
                         (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         - nu * lap_u(i)
-                        + grad_p_n(i)
+                        + grad_p_hat(i)
                         - f(i);
                 }
 
@@ -3429,7 +3420,7 @@ namespace nse {
 
                         elvec(ia) +=
                             -sigmainv * N(a) *
-                            (grad_p_curr(c) - grad_p_n(c)) *
+                            (grad_p_curr(c) - grad_p_hat(c)) *
                             wdet;
                     }
                 }
@@ -3500,7 +3491,7 @@ namespace nse {
 
             mfem::Vector conv(vdim);
             mfem::Vector lap_u(vdim);
-            mfem::Vector grad_p_n(vdim);
+            mfem::Vector grad_p_hat(vdim);
             mfem::Vector ns_res(vdim);
 
             const int e = T.ElementNo;
@@ -3531,8 +3522,11 @@ namespace nse {
                 // Current velocity gradient.
                 tlf.current.u.GetVectorGradient(T, grad_u);
 
-                // Previous pressure gradient.
-                tlf.prev_1.p.GetGradient(T, grad_p_n);
+                // p_h* = p0*p^n + p1*p^{n-1} (same helper the momentum
+                // predictor and VUE RHS use, so all three projection steps
+                // agree on p_h*).
+                double p_hat = 0.0;
+                EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
                 EvalVectorLaplacianAtIP(T, ip, lap_u);
 
@@ -3568,7 +3562,7 @@ namespace nse {
                         (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         - nu * lap_u(i)
-                        + grad_p_n(i)
+                        + grad_p_hat(i)
                         - f(i);
                 }
 
@@ -3588,10 +3582,10 @@ namespace nse {
                             (-tauM * ns_res(k)) *
                             wdet;
 
-                        // grad(q)_k * grad(p^n)_k
+                        // grad(q)_k * grad(p_h*)_k
                         elvec(a) +=
                             dN(a, k) *
-                            grad_p_n(k) *
+                            grad_p_hat(k) *
                             wdet;
                     }
                 }
@@ -3684,23 +3678,10 @@ namespace nse {
                                         const ProjectionCoefficients& pc,
                                         double& p_hat,
                                         mfem::Vector& grad_p_hat) const {
-            grad_p_hat.SetSize(vdim);
-            grad_p_hat = 0.0;
-
-            const double p_n = tlf.prev_1.p.GetValue(T, ip);
-            const double p_nm1 = tlf.prev_2.p.GetValue(T, ip);
-
-            p_hat = pc.p0 * p_n + pc.p1 * p_nm1;
-
-            mfem::Vector grad_p_n(vdim);
-            mfem::Vector grad_p_nm1(vdim);
-
-            tlf.prev_1.p.GetGradient(T, grad_p_n);
-            tlf.prev_2.p.GetGradient(T, grad_p_nm1);
-
-            for (int c = 0; c < vdim; c++) {
-                grad_p_hat(c) = pc.p0 * grad_p_n(c) + pc.p1 * grad_p_nm1(c);
-            }
+            // Delegates to the shared free function so that the momentum
+            // predictor, VUE RHS, and PPE RHS integrators all compute
+            // p_h* identically.
+            nse::EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
         }
 
         void EvalVectorLaplacianAtIP(const mfem::FiniteElement& el,
@@ -4246,7 +4227,7 @@ namespace nse {
             mfem::Vector conv(vdim);
             mfem::Vector lap_u(vdim);
             mfem::Vector grad_p_curr(vdim);
-            mfem::Vector grad_p_n(vdim);
+            mfem::Vector grad_p_hat(vdim);
             mfem::Vector ns_res(vdim);
 
             const int e = T.ElementNo;
@@ -4277,9 +4258,13 @@ namespace nse {
                 // Current velocity gradient.
                 tlf.current.u.GetVectorGradient(T, grad_u);
 
-                // Current and previous pressure gradients.
+                // Current pressure gradient, and p_h* = p0*p^n + p1*p^{n-1}
+                // (same helper the momentum predictor uses, so all three
+                // projection steps agree on p_h*).
                 tlf.current.p.GetGradient(T, grad_p_curr);
-                tlf.prev_1.p.GetGradient(T, grad_p_n);
+
+                double p_hat = 0.0;
+                EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
                 EvalVectorLaplacianAtIP(T, ip, lap_u);
 
@@ -4319,7 +4304,7 @@ namespace nse {
                         (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         - nu * lap_u(i)
-                        + grad_p_n(i)
+                        + grad_p_hat(i)
                         - f(i);
                 }
 
@@ -4332,7 +4317,7 @@ namespace nse {
 
                         elvec(ia) +=
                             -sigmainv * N(a) *
-                            (grad_p_curr(c) - grad_p_n(c)) *
+                            (grad_p_curr(c) - grad_p_hat(c)) *
                             wdet;
                     }
                 }
@@ -4403,7 +4388,7 @@ namespace nse {
 
             mfem::Vector conv(vdim);
             mfem::Vector lap_u(vdim);
-            mfem::Vector grad_p_n(vdim);
+            mfem::Vector grad_p_hat(vdim);
             mfem::Vector ns_res(vdim);
 
             const int e = T.ElementNo;
@@ -4434,8 +4419,11 @@ namespace nse {
                 // Current velocity gradient.
                 tlf.current.u.GetVectorGradient(T, grad_u);
 
-                // Previous pressure gradient.
-                tlf.prev_1.p.GetGradient(T, grad_p_n);
+                // p_h* = p0*p^n + p1*p^{n-1} (same helper the momentum
+                // predictor and VUE RHS use, so all three projection steps
+                // agree on p_h*).
+                double p_hat = 0.0;
+                EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
                 EvalVectorLaplacianAtIP(T, ip, lap_u);
 
@@ -4474,7 +4462,7 @@ namespace nse {
                         (pc.beta0 * u(i) + u_hist(i)) / dt
                         + conv(i)
                         - nu * lap_u(i)
-                        + grad_p_n(i)
+                        + grad_p_hat(i)
                         - f(i);
                 }
 
@@ -4489,10 +4477,10 @@ namespace nse {
                             (-tauM * ns_res(k)) *
                             wdet;
 
-                        // grad(q)_k * grad(p^n)_k
+                        // grad(q)_k * grad(p_h*)_k
                         elvec(a) +=
                             dN(a, k) *
-                            grad_p_n(k) *
+                            grad_p_hat(k) *
                             wdet;
                     }
                 }

@@ -153,7 +153,7 @@ namespace nse {
             ApplyBC(fgf);
         }
 
-        void ApplyBC(NSEGridFields& fgf) override {
+        void ApplyVelocityBC(NSEGridFields& fgf) override {
             mfem::ConstantCoefficient zero(0.0);
             mfem::ConstantCoefficient lid_u(lid_velocity);
 
@@ -172,6 +172,11 @@ namespace nse {
             coeffs[1] = &zero;
             fgf.u.ProjectBdrCoefficient(coeffs.data(), bdr_attr_top);
         }
+
+        // No ApplyPressureBC() override: the corner pin (ess_tdof_list_p) is
+        // set to p = 0 once via SetIC's zero pressure projection and is never
+        // touched again, which is exactly what a single-point p = 0 pin for a
+        // closed cavity requires. The base class's no-op default is correct.
 
         void RegisterParaviewFields(ParaViewDataCollection& pvdc,
                                     ParaViewDataCollection& pvdc_q) override {

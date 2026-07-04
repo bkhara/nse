@@ -105,6 +105,43 @@ namespace nse {
         IncPressureBDF2
     };
 
+    struct ProjectionCoefficients {
+        double beta0 = 1.0; // dimensionless coefficient multiplying u^{n+1} or u_star
+        double beta1 = -1.0; // signed dimensionless coefficient multiplying u^n
+        double beta2 = 0.0; // signed dimensionless coefficient multiplying u^{n-1}
+        double p0 = 1.0; // p^n coefficient in p_hat
+        double p1 = 0.0; // p^{n-1} coefficient in p_hat
+    };
+
+    inline ProjectionCoefficients GetProjectionCoefficients(const ProjectionScheme scheme) {
+        ProjectionCoefficients c;
+
+        if (scheme == ProjectionScheme::ChorinFirstOrder) {
+            // BDF1:
+            // (u^{n+1} - u^n) / dt
+            c.beta0 = 1.0;
+            c.beta1 = -1.0;
+            c.beta2 = 0.0;
+
+            // Classic Chorin has no pressure in the tentative velocity step.
+            c.p0 = 0.0;
+            c.p1 = 0.0;
+        }
+        else {
+            // BDF2:
+            // (3/2 u^{n+1} - 2 u^n + 1/2 u^{n-1}) / dt
+            c.beta0 = 1.5;
+            c.beta1 = -2.0;
+            c.beta2 = 0.5;
+
+            // Second-order pressure extrapolation.
+            c.p0 = 1.0;
+            c.p1 = 0.0;
+        }
+
+        return c;
+    }
+
     struct ProjectionConfig {
         ProjectionScheme scheme = ProjectionScheme::IncPressureBDF2;
 

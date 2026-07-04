@@ -426,9 +426,11 @@ namespace nse {
             fgf.p.ProjectCoefficient(*exact_pressure);
         }
 
-        void ApplyBC(NSEGridFields &fgf) override {
+        void ApplyVelocityBC(NSEGridFields &fgf) override {
             fgf.u.ProjectBdrCoefficient(*exact_velocity, bdr_attr_u);
+        }
 
+        void ApplyPressureBC(NSEGridFields &fgf) override {
             // ------------------------------------------------------------------------
             // Pressure point constraint / pressure pinning
             mfem::ParFiniteElementSpace *pfes_p = fgf.p.ParFESpace();
