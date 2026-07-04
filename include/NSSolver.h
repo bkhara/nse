@@ -152,7 +152,14 @@ namespace nse {
                 A_ppe.Assemble();
                 A_ppe.Finalize();
 
-                B_ppe.AddDomainIntegrator(new NSEProjVMSIntegPPERHSConvForm(idata, tlf, fem.vel_vdim, pcase->forcing_rhs));
+                if (idata.convection_info.is_convective()) {
+                    B_ppe.AddDomainIntegrator(new NSEProjVMSIntegPPERHSConvForm(idata, tlf, fem.vel_vdim, pcase->forcing_rhs));
+                } else if (idata.convection_info.is_divergence()) {
+                    B_ppe.AddDomainIntegrator(new NSEProjVMSIntegPPERHSDivForm(idata, tlf, fem.vel_vdim, pcase->forcing_rhs));
+                } else {
+                    MFEM_ABORT("NSSolverUncoupled: skew-symmetric convection form is not "
+                        "yet implemented for the PPE RHS integrator.");
+                }
             }
 
             // set up operators for VUE
@@ -161,7 +168,14 @@ namespace nse {
                 A_vue.Assemble();
                 A_vue.Finalize();
 
-                B_vue.AddDomainIntegrator(new NSEProjVMSIntegVUERHSConvForm(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                if (idata.convection_info.is_convective()) {
+                    B_vue.AddDomainIntegrator(new NSEProjVMSIntegVUERHSConvForm(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                } else if (idata.convection_info.is_divergence()) {
+                    B_vue.AddDomainIntegrator(new NSEProjVMSIntegVUERHSDivForm(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
+                } else {
+                    MFEM_ABORT("NSSolverUncoupled: skew-symmetric convection form is not "
+                        "yet implemented for the VUE RHS integrator.");
+                }
             }
         }
 

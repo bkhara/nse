@@ -52,6 +52,19 @@ namespace nse {
 
             bnlf = new mfem::ParBlockNonlinearForm(fem.fespace_block_up);
             if (idata.time_marching.marching_scheme == TimeMarchingScheme::BDF2) {
+                // NSEBlockIntegBDF2 (and its outlet-flux/VMS/SUPG/PSPG companions)
+                // are all written in the divergence (conservative) convection
+                // form. No convective- or skew-symmetric-form BDF2 integrator
+                // exists yet, so anything else must abort rather than silently
+                // running with the wrong discrete form.
+                if (!idata.convection_info.is_divergence()) {
+                    MFEM_ABORT("NSEBlockOperator: BDF2 time marching is only "
+                        "implemented with the divergence (conservative) "
+                        "convection form (ConvectionForms::DIV_FORM). The "
+                        "convective and skew-symmetric forms are not yet "
+                        "implemented for BDF2.");
+                }
+
                 bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
                 if (pcase->has_outlet_bc) {
                     bnlf->AddBdrFaceIntegrator(
@@ -70,6 +83,16 @@ namespace nse {
                     }
                 }
             } else if (idata.time_marching.marching_scheme == TimeMarchingScheme::CN) {
+                // NSEBlockIntegCrankNicolson is written in the direct
+                // convective form. No divergence- or skew-symmetric-form CN
+                // integrator exists yet.
+                if (!idata.convection_info.is_convective()) {
+                    MFEM_ABORT("NSEBlockOperator: Crank-Nicolson time marching "
+                        "is only implemented with the convective convection "
+                        "form (ConvectionForms::CONV_FORM). The divergence and "
+                        "skew-symmetric forms are not yet implemented for CN.");
+                }
+
                 bnlf->AddDomainIntegrator(new NSEBlockIntegCrankNicolson(idata, tlf, fem.vel_vdim,fem.ordering, pcase->forcing_rhs));
             } else {
                 MFEM_ABORT("Unknown TimeMarchingScheme. Must be either bdf2 or cn");
@@ -155,13 +178,17 @@ namespace nse {
 
             nlf = new mfem::ParNonlinearForm(femach.fespace_primal_u);
 
-            nlf->AddDomainIntegrator(
-                new NSEProjVMSIntegMomentumConvForm(
-                    idata,
-                    tlf,
-                    femach.vel_vdim,
-                    femach.ordering,
-                    pcase->forcing_rhs));
+            if (idata.convection_info.is_convective()) {
+                nlf->AddDomainIntegrator(
+                    new NSEProjVMSIntegMomentumConvForm(idata, tlf, femach.vel_vdim, femach.ordering, pcase->forcing_rhs));
+            } else if (idata.convection_info.is_divergence()) {
+                nlf->AddDomainIntegrator(
+                    new NSEProjVMSIntegMomentumDivForm(idata, tlf, femach.vel_vdim, femach.ordering, pcase->forcing_rhs));
+            } else {
+                MFEM_ABORT("NSEProjectionVelocityPredictorOperator: "
+                    "skew-symmetric convection form is not yet implemented "
+                    "for the projection momentum predictor.");
+            }
         }
 
         ~NSEProjectionVelocityPredictorOperator() override {

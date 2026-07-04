@@ -3598,4 +3598,905 @@ namespace nse {
             }
         }
     };
+
+    // =====================================================================
+    // Divergence (conservative) form of the projection-method integrators.
+    //
+    // These mirror NSEProjVMSIntegMomentumConvForm / NSEProjVMSIntegVUERHSConvForm /
+    // NSEProjVMSIntegPPERHSConvForm, but build the nonlinear convective term
+    // using the divergence form
+    //
+    //     div(u tensor u)_c = d_j(u_c u_j) = (u . grad) u_c + u_c (div u)
+    //
+    // wherever the coarse-scale strong residual Res is evaluated (i.e. in
+    // the VMS closure terms), and use the corresponding integrated-by-parts
+    // Galerkin convective term
+    //
+    //     -(u tensor u, grad v)
+    //
+    // in place of the direct/advective (u . grad u, v) term used by the
+    // *ConvForm classes. This implements the VMS-stabilized projection
+    // scheme:
+    //
+    //   Step 1 (momentum predictor, nonlinear):
+    //     sigma(u,v) - (u tensor u, grad v) + nu(grad u, grad v) + (grad p*, v)
+    //     + sum_K (u tensor tauM*Res, grad v)_K
+    //     + sum_K (tauM*Res tensor u, grad v)_K
+    //     - sum_K (tauM^2 Res tensor Res, grad v)_K
+    //     - (g, v) = 0
+    //
+    //   Step 2 (pressure Poisson, linear):
+    //     (grad p_hat, grad q) = (grad p*, grad q) - sigma (div u, q)
+    //       - sigma sum_K (tauM*Res, grad q)_K
+    //
+    //   Step 3 (velocity projection, linear):
+    //     (u_hat, w) = (u, w) - sum_K (tauM*Res, w)_K
+    //       - (1/sigma) (grad(p_hat - p*), w)
+    //
+    // with Res = sigma*u + (history)/dt + div(u tensor u) - nu*Delta(u)
+    //            + grad(p*) - g.
+    //
+    // NOTE: switching the coarse-scale Galerkin convective term to the
+    // integrated-by-parts (divergence) form introduces a boundary flux
+    //
+    //     <n . [u tensor u - nu grad u], v>_{Gamma_N}
+    //
+    // on any boundary where velocity is not strongly imposed (open/outflow
+    // boundaries). That term is NOT included here, mirroring how
+    // NSEBlockIntegBDF2OutletConvectiveFlux is a *separate* boundary face
+    // integrator for the coupled solver. If NSSolverUncoupled is used with
+    // an open/outflow boundary, add an analogous face integrator (via
+    // AddBdrFaceIntegrator on the momentum predictor's ParNonlinearForm)
+    // before relying on these divergence-form integrators.
+    // =====================================================================
+
+    class NSEProjVMSIntegMomentumDivForm : public mfem::NonlinearFormIntegrator {
+    private:
+        const InputData& idata;
+        const TimeLevelFields& tlf;
+        const int vdim;
+        const mfem::Ordering::Type ordering;
+        mfem::VectorCoefficient* f_coeff = nullptr;
+
+        bool use_strong_laplacian_terms = false;
+
+    public:
+        NSEProjVMSIntegMomentumDivForm(
+            const InputData& idata,
+            const TimeLevelFields& tlf,
+            const int vdim,
+            const mfem::Ordering::Type ordering,
+            mfem::VectorCoefficient* f_coeff = nullptr)
+            : idata(idata),
+              tlf(tlf),
+              vdim(vdim),
+              ordering(ordering),
+              f_coeff(f_coeff) {
+        }
+
+        void UseStrongLaplacianTerms(const bool use_it) {
+            use_strong_laplacian_terms = use_it;
+        }
+
+    private:
+        void EvalPressureHatAndGradAtIP(mfem::ElementTransformation& T,
+                                        const mfem::IntegrationPoint& ip,
+                                        const ProjectionCoefficients& pc,
+                                        double& p_hat,
+                                        mfem::Vector& grad_p_hat) const {
+            grad_p_hat.SetSize(vdim);
+            grad_p_hat = 0.0;
+
+            const double p_n = tlf.prev_1.p.GetValue(T, ip);
+            const double p_nm1 = tlf.prev_2.p.GetValue(T, ip);
+
+            p_hat = pc.p0 * p_n + pc.p1 * p_nm1;
+
+            mfem::Vector grad_p_n(vdim);
+            mfem::Vector grad_p_nm1(vdim);
+
+            tlf.prev_1.p.GetGradient(T, grad_p_n);
+            tlf.prev_2.p.GetGradient(T, grad_p_nm1);
+
+            for (int c = 0; c < vdim; c++) {
+                grad_p_hat(c) = pc.p0 * grad_p_n(c) + pc.p1 * grad_p_nm1(c);
+            }
+        }
+
+        void EvalVectorLaplacianAtIP(const mfem::FiniteElement& el,
+                                     mfem::ElementTransformation& T,
+                                     const mfem::IntegrationPoint& ip,
+                                     const mfem::Vector& elfun,
+                                     const int ndof,
+                                     mfem::Vector& lap_u) const {
+            lap_u.SetSize(vdim);
+            lap_u = 0.0;
+
+            if (!use_strong_laplacian_terms) {
+                return;
+            }
+
+            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
+                "Implement physical second derivatives for your element family.");
+        }
+
+        void EvalShapeLaplacianAtIP(const mfem::FiniteElement& el,
+                                    mfem::ElementTransformation& T,
+                                    const mfem::IntegrationPoint& ip,
+                                    mfem::Vector& lap_N) const {
+            const int ndof = el.GetDof();
+
+            lap_N.SetSize(ndof);
+            lap_N = 0.0;
+
+            if (!use_strong_laplacian_terms) {
+                return;
+            }
+
+            MFEM_ABORT("EvalShapeLaplacianAtIP is not implemented. "
+                "Implement physical second derivatives for your element family.");
+        }
+
+    public:
+        void AssembleElementVector(const mfem::FiniteElement& el,
+                                   mfem::ElementTransformation& T,
+                                   const mfem::Vector& elfun,
+                                   mfem::Vector& elvec) override {
+            const int ndof = el.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec.SetSize(vdim * ndof);
+            elvec = 0.0;
+
+            mfem::Vector N(ndof);
+            mfem::DenseMatrix dN(ndof, dim);
+
+            mfem::Vector u(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            mfem::Vector u_n(vdim), u_nm1(vdim), u_hist(vdim), f(vdim);
+
+            mfem::Vector conv(vdim);
+            mfem::Vector grad_p_hat(vdim);
+            mfem::Vector lap_u(vdim);
+            mfem::Vector ns_res(vdim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double dt = tlf.GetTimeStep();
+            const double ctime = tlf.GetTime();
+            const double nu = idata.flow_properties.nu;
+
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el.CalcShape(ip, N);
+                el.CalcPhysDShape(T, dN);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
+                EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
+                EvalVectorLaplacianAtIP(el, T, ip, elfun, ndof, lap_u);
+
+                tlf.prev_1.u.GetVectorValue(T, ip, u_n);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
+
+                u_hist.SetSize(vdim);
+                for (int c = 0; c < vdim; c++) {
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
+                }
+
+                double p_hat = 0.0;
+                EvalPressureHatAndGradAtIP(T, ip, pc, p_hat, grad_p_hat);
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                // -------------------------------------------------------
+                // Divergence-form convection:
+                //
+                //   div(u tensor u)_c = (u . grad) u_c + u_c (div u)
+                // -------------------------------------------------------
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+
+                if (!idata.flow_properties.disable_convection) {
+                    for (int i = 0; i < vdim; i++) {
+                        for (int j = 0; j < dim; j++) {
+                            conv(i) += u(j) * grad_u(i, j);
+                        }
+                        conv(i) += u(i) * div_u;
+                    }
+                }
+
+                double tauM, tauC;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+
+                // -----------------------------------------------------------------
+                // Coarse-scale (strong) momentum residual, divergence form:
+                //
+                // Res_i =
+                //   sigma*u_i + (history)/dt
+                //   + div(u tensor u)_i
+                //   + grad(p_hat)_i
+                //   - nu * laplacian(u_i)
+                //   - f_i
+                // -----------------------------------------------------------------
+                ns_res.SetSize(vdim);
+                for (int i = 0; i < vdim; i++) {
+                    ns_res(i) =
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
+                        + conv(i)
+                        + grad_p_hat(i)
+                        - nu * lap_u(i)
+                        - f(i);
+                }
+
+                for (int a = 0; a < ndof; a++) {
+                    double crossTermVelocityPart = 0.0;
+                    for (int i = 0; i < dim; i++) {
+                        crossTermVelocityPart += dN(a, i) * u(i);
+                    }
+
+                    double crossTermFineScalePart = 0.0;
+                    for (int i = 0; i < dim; i++) {
+                        crossTermFineScalePart += dN(a, i) * tauM * ns_res(i);
+                    }
+
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                        // ---------------------------------------------------------
+                        // Galerkin terms:
+                        //
+                        //   sigma*(u,v)
+                        // - (u tensor u, grad v)     [divergence/by-parts convection]
+                        // + nu (grad u, grad v)
+                        // + (grad p_hat, v)
+                        // - (f, v)
+                        // ---------------------------------------------------------
+
+                        elvec(ia) += N(a) * ((pc.beta0 * u(c) + u_hist(c)) / dt) * wdet;
+
+                        if (!idata.flow_properties.disable_convection) {
+                            for (int j = 0; j < dim; j++) {
+                                elvec(ia) += -u(c) * u(j) * dN(a, j) * wdet;
+                            }
+                        }
+
+                        elvec(ia) += N(a) * grad_p_hat(c) * wdet;
+
+                        for (int j = 0; j < dim; j++) {
+                            elvec(ia) += nu * dN(a, j) * grad_u(c, j) * wdet;
+                        }
+
+                        elvec(ia) += -N(a) * f(c) * wdet;
+
+                        // ---------------------------------------------------------
+                        // VMS cross term 1:  (u tensor tauM*Res, grad v)
+                        // ---------------------------------------------------------
+
+                        elvec(ia) +=
+                            tauM * crossTermVelocityPart * ns_res(c) * wdet;
+
+                        // ---------------------------------------------------------
+                        // VMS cross term 2:  (tauM*Res tensor u, grad v)
+                        // ---------------------------------------------------------
+
+                        elvec(ia) +=
+                            crossTermFineScalePart * u(c) * wdet;
+
+                        // ---------------------------------------------------------
+                        // Reynolds-stress / fine-scale term:
+                        //   -(tauM^2 Res tensor Res, grad v)
+                        // ---------------------------------------------------------
+
+                        for (int j = 0; j < dim; j++) {
+                            elvec(ia) +=
+                                -dN(a, j)
+                                * (tauM * ns_res(c))
+                                * (tauM * ns_res(j))
+                                * wdet;
+                        }
+                    }
+                }
+            }
+        }
+
+        void AssembleElementGrad(const mfem::FiniteElement& el,
+                                 mfem::ElementTransformation& T,
+                                 const mfem::Vector& elfun,
+                                 mfem::DenseMatrix& elmat) override {
+            const int ndof = el.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elmat.SetSize(vdim * ndof, vdim * ndof);
+            elmat = 0.0;
+
+            mfem::Vector N(ndof);
+            mfem::DenseMatrix dN(ndof, dim);
+
+            mfem::Vector u(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            mfem::Vector u_n(vdim), u_nm1(vdim), u_hist(vdim), f(vdim);
+
+            mfem::Vector conv(vdim);
+            mfem::Vector grad_p_hat(vdim);
+            mfem::Vector lap_u(vdim);
+            mfem::Vector lap_N(ndof);
+            mfem::Vector ns_res(vdim);
+
+            mfem::DenseMatrix dResdu(vdim, vdim);
+            mfem::Vector dResdu_dot_dNa(vdim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double dt = tlf.GetTimeStep();
+            const double ctime = tlf.GetTime();
+            const double nu = idata.flow_properties.nu;
+
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
+            const double alpha = pc.beta0 / dt;
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el.CalcShape(ip, N);
+                el.CalcPhysDShape(T, dN);
+
+                EvalShapeLaplacianAtIP(el, T, ip, lap_N);
+
+                const double wdet = ip.weight * T.Weight();
+
+                EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
+                EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
+                EvalVectorLaplacianAtIP(el, T, ip, elfun, ndof, lap_u);
+
+                tlf.prev_1.u.GetVectorValue(T, ip, u_n);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
+
+                u_hist.SetSize(vdim);
+                for (int c = 0; c < vdim; c++) {
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
+                }
+
+                double p_hat = 0.0;
+                EvalPressureHatAndGradAtIP(T, ip, pc, p_hat, grad_p_hat);
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+
+                if (!idata.flow_properties.disable_convection) {
+                    for (int i = 0; i < vdim; i++) {
+                        for (int j = 0; j < dim; j++) {
+                            conv(i) += u(j) * grad_u(i, j);
+                        }
+                        conv(i) += u(i) * div_u;
+                    }
+                }
+
+                double tauM, tauC;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+
+                ns_res.SetSize(vdim);
+                for (int i = 0; i < vdim; i++) {
+                    ns_res(i) =
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
+                        + conv(i)
+                        + grad_p_hat(i)
+                        - nu * lap_u(i)
+                        - f(i);
+                }
+
+                for (int a = 0; a < ndof; a++) {
+                    double crossTermVelocityPart = 0.0;
+                    for (int i = 0; i < dim; i++) {
+                        crossTermVelocityPart += dN(a, i) * u(i);
+                    }
+
+                    double crossTermFineScalePart = 0.0;
+                    for (int i = 0; i < dim; i++) {
+                        crossTermFineScalePart += dN(a, i) * tauM * ns_res(i);
+                    }
+
+                    for (int b = 0; b < ndof; b++) {
+                        double conv_b = 0.0; // u . grad(N_b)
+                        for (int i = 0; i < dim; i++) {
+                            conv_b += dN(b, i) * u(i);
+                        }
+
+                        double gradNa_dot_gradNb = 0.0;
+                        for (int j = 0; j < dim; j++) {
+                            gradNa_dot_gradNb += dN(a, j) * dN(b, j);
+                        }
+
+                        // old:
+                        //
+                        // diff_J += nu * fe.d2N(b,j,j)
+                        const double diff_J = nu * lap_N(b);
+
+                        // -----------------------------------------------------
+                        // dResdu(c,k): derivative of the divergence-form
+                        // strong residual component c w.r.t. trial velocity
+                        // component k at trial dof b.
+                        //
+                        // Res_c = sigma*u_c + div(u tensor u)_c - nu*lap(u_c) + ...
+                        //
+                        // d[div(u tensor u)_c]/du_k =
+                        //     N_b * grad_u(c,k)
+                        //   + delta_ck * (u . grad N_b)
+                        //   + delta_ck * N_b * div(u)
+                        //   + u_c * dN(b,k)
+                        // -----------------------------------------------------
+                        dResdu = 0.0;
+                        for (int c = 0; c < vdim; c++) {
+                            for (int k = 0; k < vdim; k++) {
+                                double val = 0.0;
+                                if (c == k) {
+                                    val += alpha * N(b);
+                                    val -= diff_J;
+                                }
+
+                                if (!idata.flow_properties.disable_convection) {
+                                    val += N(b) * grad_u(c, k);
+                                    if (c == k) {
+                                        val += conv_b;
+                                        val += N(b) * div_u;
+                                    }
+                                    val += u(c) * dN(b, k);
+                                }
+
+                                dResdu(c, k) = val;
+                            }
+                        }
+
+                        // ---------------------------------------------------------
+                        // 1. Direct Galerkin Jacobian: mass + diffusion + convection
+                        //    (convection now in by-parts/divergence form).
+                        // ---------------------------------------------------------
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof, vdim, b, k, ordering);
+
+                                double val = 0.0;
+
+                                if (c == k) {
+                                    val += alpha * N(a) * N(b);
+                                    val += nu * gradNa_dot_gradNb;
+                                }
+
+                                if (!idata.flow_properties.disable_convection) {
+                                    if (c == k) {
+                                        val += -N(b) * crossTermVelocityPart;
+                                    }
+                                    val += -u(c) * N(b) * dN(a, k);
+                                }
+
+                                elmat(ia, ib) += val * wdet;
+                            }
+                        }
+
+                        if (idata.flow_properties.disable_convection) {
+                            continue;
+                        }
+
+                        // dResdu_dot_dNa(k) = sum_i dN(a,i) * dResdu(i,k)
+                        dResdu_dot_dNa = 0.0;
+                        for (int k = 0; k < vdim; k++) {
+                            double s = 0.0;
+                            for (int i = 0; i < dim; i++) {
+                                s += dN(a, i) * dResdu(i, k);
+                            }
+                            dResdu_dot_dNa(k) = s;
+                        }
+
+                        // ---------------------------------------------------------
+                        // 2. Cross term 1 Jacobian:  tauM * crossTermVelocityPart * Res_c
+                        // ---------------------------------------------------------
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof, vdim, b, k, ordering);
+
+                                double val = 0.0;
+
+                                val += tauM * dN(a, k) * N(b) * ns_res(c);
+                                val += tauM * crossTermVelocityPart * dResdu(c, k);
+
+                                elmat(ia, ib) += val * wdet;
+                            }
+                        }
+
+                        // ---------------------------------------------------------
+                        // 3. Cross term 2 Jacobian:  crossTermFineScalePart * u_c
+                        // ---------------------------------------------------------
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof, vdim, b, k, ordering);
+
+                                double val = tauM * dResdu_dot_dNa(k) * u(c);
+                                if (c == k) {
+                                    val += crossTermFineScalePart * N(b);
+                                }
+
+                                elmat(ia, ib) += val * wdet;
+                            }
+                        }
+
+                        // ---------------------------------------------------------
+                        // 4. Reynolds-stress Jacobian:
+                        //      -tauM^2 * Res_c * Res_j * dN(a,j)   (summed over j)
+                        //    = -tauM * dResdu(c,k) * crossTermFineScalePart
+                        //      - tauM^2 * Res_c * dResdu_dot_dNa(k)
+                        // ---------------------------------------------------------
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof, vdim, b, k, ordering);
+
+                                double val = 0.0;
+                                val += -tauM * dResdu(c, k) * crossTermFineScalePart;
+                                val += -tauM * tauM * ns_res(c) * dResdu_dot_dNa(k);
+
+                                elmat(ia, ib) += val * wdet;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    class NSEProjVMSIntegVUERHSDivForm : public mfem::LinearFormIntegrator {
+    private:
+        const InputData& idata;
+        const TimeLevelFields& tlf;
+        const int vdim;
+        const mfem::Ordering::Type ordering;
+        mfem::VectorCoefficient* f_coeff = nullptr;
+
+        bool use_strong_laplacian_terms = false;
+
+    public:
+        NSEProjVMSIntegVUERHSDivForm(
+            const InputData& idata,
+            const TimeLevelFields& tlf,
+            const int vdim,
+            const mfem::Ordering::Type ordering,
+            mfem::VectorCoefficient* f_coeff = nullptr)
+            : idata(idata),
+              tlf(tlf),
+              vdim(vdim),
+              ordering(ordering),
+              f_coeff(f_coeff) {
+        }
+
+        void UseStrongLaplacianTerms(const bool use_it) {
+            use_strong_laplacian_terms = use_it;
+        }
+
+    private:
+        void EvalVectorLaplacianAtIP(mfem::ElementTransformation& T,
+                                     const mfem::IntegrationPoint& ip,
+                                     mfem::Vector& lap_u) const {
+            lap_u.SetSize(vdim);
+            lap_u = 0.0;
+
+            if (!use_strong_laplacian_terms) {
+                return;
+            }
+
+            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
+                "Implement/recover Laplacian(u) if exact old-code parity is needed.");
+        }
+
+    public:
+        void AssembleRHSElementVect(const mfem::FiniteElement& el,
+                                    mfem::ElementTransformation& T,
+                                    mfem::Vector& elvec) override {
+            const int ndof = el.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec.SetSize(vdim * ndof);
+            elvec = 0.0;
+
+            mfem::Vector N(ndof);
+
+            mfem::Vector u(vdim);
+            mfem::Vector u_n(vdim), u_nm1(vdim), u_hist(vdim);
+            mfem::Vector f(vdim);
+
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            mfem::Vector conv(vdim);
+            mfem::Vector lap_u(vdim);
+            mfem::Vector grad_p_curr(vdim);
+            mfem::Vector grad_p_n(vdim);
+            mfem::Vector ns_res(vdim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double dt = tlf.GetTimeStep();
+            const double ctime = tlf.GetTime();
+            const double nu = idata.flow_properties.nu;
+
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
+
+            const double sigma = pc.beta0 / dt;
+            const double sigmainv = 1.0 / sigma;
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el.CalcShape(ip, N);
+
+                const double wdet = ip.weight * T.Weight();
+
+                // Current velocity, old velocities.
+                tlf.current.u.GetVectorValue(T, ip, u);
+                tlf.prev_1.u.GetVectorValue(T, ip, u_n);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
+
+                // Current velocity gradient.
+                tlf.current.u.GetVectorGradient(T, grad_u);
+
+                // Current and previous pressure gradients.
+                tlf.current.p.GetGradient(T, grad_p_curr);
+                tlf.prev_1.p.GetGradient(T, grad_p_n);
+
+                EvalVectorLaplacianAtIP(T, ip, lap_u);
+
+                u_hist.SetSize(vdim);
+                for (int c = 0; c < vdim; c++) {
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
+                }
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                // Divergence-form convection: div(u tensor u)_i = (u.grad)u_i + u_i*div(u)
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+
+                if (!idata.flow_properties.disable_convection) {
+                    for (int i = 0; i < vdim; i++) {
+                        for (int j = 0; j < dim; j++) {
+                            conv(i) += u(j) * grad_u(i, j);
+                        }
+                        conv(i) += u(i) * div_u;
+                    }
+                }
+
+                double tauM, tauC;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+
+                ns_res.SetSize(vdim);
+                for (int i = 0; i < vdim; i++) {
+                    ns_res(i) =
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
+                        + conv(i)
+                        - nu * lap_u(i)
+                        + grad_p_n(i)
+                        - f(i);
+                }
+
+                for (int a = 0; a < ndof; a++) {
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                        elvec(ia) +=
+                            N(a) * (u(c) - tauM * ns_res(c)) * wdet;
+
+                        elvec(ia) +=
+                            -sigmainv * N(a) *
+                            (grad_p_curr(c) - grad_p_n(c)) *
+                            wdet;
+                    }
+                }
+            }
+        }
+    };
+
+    class NSEProjVMSIntegPPERHSDivForm : public mfem::LinearFormIntegrator {
+    private:
+        const InputData& idata;
+        const TimeLevelFields& tlf;
+        const int vdim;
+        mfem::VectorCoefficient* f_coeff = nullptr;
+
+        bool use_strong_laplacian_terms = false;
+
+    public:
+        NSEProjVMSIntegPPERHSDivForm(
+            const InputData& idata,
+            const TimeLevelFields& tlf,
+            const int vdim,
+            mfem::VectorCoefficient* f_coeff = nullptr)
+            : idata(idata),
+              tlf(tlf),
+              vdim(vdim),
+              f_coeff(f_coeff) {
+        }
+
+        void UseStrongLaplacianTerms(const bool use_it) {
+            use_strong_laplacian_terms = use_it;
+        }
+
+    private:
+        void EvalVectorLaplacianAtIP(mfem::ElementTransformation& T,
+                                     const mfem::IntegrationPoint& ip,
+                                     mfem::Vector& lap_u) const {
+            lap_u.SetSize(vdim);
+            lap_u = 0.0;
+
+            if (!use_strong_laplacian_terms) {
+                return;
+            }
+
+            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
+                "Implement/recover Laplacian(u) if exact old-code parity is needed.");
+        }
+
+    public:
+        void AssembleRHSElementVect(const mfem::FiniteElement& el,
+                                    mfem::ElementTransformation& T,
+                                    mfem::Vector& elvec) override {
+            const int ndof = el.GetDof();
+            const int dim = T.GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec.SetSize(ndof);
+            elvec = 0.0;
+
+            mfem::Vector N(ndof);
+            mfem::DenseMatrix dN(ndof, dim);
+
+            mfem::Vector u(vdim);
+            mfem::Vector u_n(vdim), u_nm1(vdim), u_hist(vdim);
+            mfem::Vector f(vdim);
+
+            mfem::DenseMatrix grad_u(vdim, dim);
+
+            mfem::Vector conv(vdim);
+            mfem::Vector lap_u(vdim);
+            mfem::Vector grad_p_n(vdim);
+            mfem::Vector ns_res(vdim);
+
+            const int e = T.ElementNo;
+            const mfem::IntegrationRule* ir = &tlf.femach.qspace->GetIntRule(e);
+
+            const double dt = tlf.GetTimeStep();
+            const double ctime = tlf.GetTime();
+            const double nu = idata.flow_properties.nu;
+
+            const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
+
+            const double sigma = pc.beta0 / dt;
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip = ir->IntPoint(iq);
+                T.SetIntPoint(&ip);
+
+                el.CalcShape(ip, N);
+                el.CalcPhysDShape(T, dN);
+
+                const double wdet = ip.weight * T.Weight();
+
+                // Current velocity and old velocities.
+                tlf.current.u.GetVectorValue(T, ip, u);
+                tlf.prev_1.u.GetVectorValue(T, ip, u_n);
+                tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
+
+                // Current velocity gradient.
+                tlf.current.u.GetVectorGradient(T, grad_u);
+
+                // Previous pressure gradient.
+                tlf.prev_1.p.GetGradient(T, grad_p_n);
+
+                EvalVectorLaplacianAtIP(T, ip, lap_u);
+
+                u_hist.SetSize(vdim);
+                for (int c = 0; c < vdim; c++) {
+                    u_hist(c) = pc.beta1 * u_n(c) + pc.beta2 * u_nm1(c);
+                }
+
+                f.SetSize(vdim);
+                f = 0.0;
+                if (f_coeff) {
+                    f_coeff->SetTime(ctime);
+                    f_coeff->Eval(f, T, ip);
+                }
+
+                const double div_u = Divergence(grad_u);
+
+                conv.SetSize(vdim);
+                conv = 0.0;
+
+                if (!idata.flow_properties.disable_convection) {
+                    for (int i = 0; i < vdim; i++) {
+                        for (int j = 0; j < dim; j++) {
+                            conv(i) += u(j) * grad_u(i, j);
+                        }
+                        conv(i) += u(i) * div_u;
+                    }
+                }
+
+                double tauM, tauC;
+                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+
+                ns_res.SetSize(vdim);
+                for (int i = 0; i < vdim; i++) {
+                    ns_res(i) =
+                        (pc.beta0 * u(i) + u_hist(i)) / dt
+                        + conv(i)
+                        - nu * lap_u(i)
+                        + grad_p_n(i)
+                        - f(i);
+                }
+
+                for (int a = 0; a < ndof; a++) {
+                    // -sigma * N(a) * div(u)
+                    elvec(a) += -sigma * N(a) * div_u * wdet;
+
+                    for (int k = 0; k < dim; k++) {
+                        // sigma * grad(q)_k * (-tauM * NS_residual_k)
+                        elvec(a) +=
+                            sigma * dN(a, k) *
+                            (-tauM * ns_res(k)) *
+                            wdet;
+
+                        // grad(q)_k * grad(p^n)_k
+                        elvec(a) +=
+                            dN(a, k) *
+                            grad_p_n(k) *
+                            wdet;
+                    }
+                }
+            }
+        }
+    };
 }

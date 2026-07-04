@@ -38,6 +38,7 @@ time_marching = {
 
 Re = 100.0;
 disable_convection = false;
+convection_form = 2; # 0: conv-form, 1: skew-sym, 2: div-form
 method_config = {
     stab_scheme = "none"; # none or vms or sups
     coupling_form = 0; # 0: coupled, 1: uncoupled

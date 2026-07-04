@@ -23,6 +23,11 @@ namespace nse {
         FULLY_COUPLED = 0, // both stabilized and unstabilized
         UNCOUPLED = 1, // projection method
     };
+    enum ConvectionForms : unsigned int {
+        CONV_FORM = 0,
+        SKEW_SYM_FORM = 1,
+        DIV_FORM = 2,
+    };
     enum BoundEnforcementType : unsigned int {
         SINGLE_SIDED_CONSTRAINT = 0,
         DOUBLE_SIDED_CONSTRAINT = 1,
@@ -253,6 +258,29 @@ namespace nse {
                 reader.ReadValue("mesh_config.nsd", nsd);
                 reader.ReadArray("mesh_config.lengths", lengths);
                 reader.ReadArray("mesh_config.nels", nels);
+            }
+        }
+    };
+
+    struct ConvectionInfo {
+        ConvectionForms convection_form = CONV_FORM;
+
+        bool is_convective() const {
+            return convection_form == CONV_FORM;
+        }
+        bool is_skew_symmetric() const {
+            return convection_form == SKEW_SYM_FORM;
+        }
+        bool is_divergence() const {
+            return convection_form == DIV_FORM;
+        }
+
+        void ReadFromFile(InputReader &reader) {
+            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading ConvectionInfo\n"; }
+            {
+                auto tmp = static_cast<int>(convection_form);
+                reader.ReadValue("convection_form", tmp);
+                convection_form = static_cast<ConvectionForms>(tmp);
             }
         }
     };
@@ -720,6 +748,8 @@ namespace nse {
         MeshConfig mesh_config;
         TimeMarchingConfig time_marching;
 
+        ConvectionInfo convection_info;
+
         MethodConfig method_config;
         ProjectionConfig projection_config;
         VMSConfig vms_config;
@@ -751,6 +781,7 @@ namespace nse {
             mesh_config.ReadFromFile(reader);
             time_marching.ReadFromFile(reader);
             pcase_config.ReadFromFile(reader);
+            convection_info.ReadFromFile(reader);
             flow_properties.ReadFromFile(reader);
             mms2d_inputs.ReadFromFile(reader);
             fpc2d_inputs.ReadFromFile(reader);
