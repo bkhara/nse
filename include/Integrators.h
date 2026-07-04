@@ -2875,7 +2875,7 @@ namespace nse {
                         //
                         //   N(a) * BDF(u)
                         // + N(a) * convection
-                        // - dN(a,c) * p_hat
+                        // + N(a) * grad_p_hat(c)
                         // + nu * grad_u : grad_v
                         // - N(a) * f
                         // ---------------------------------------------------------
@@ -2886,7 +2886,7 @@ namespace nse {
                             elvec(ia) += N(a) * conv(c) * wdet;
                         }
 
-                        elvec(ia) += -dN(a, c) * p_hat * wdet;
+                        elvec(ia) += N(a) * grad_p_hat(c) * wdet;
 
                         for (int j = 0; j < dim; j++) {
                             elvec(ia) += nu * dN(a, j) * grad_u(c, j) * wdet;
