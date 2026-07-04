@@ -156,7 +156,7 @@ namespace nse {
             nlf = new mfem::ParNonlinearForm(femach.fespace_primal_u);
 
             nlf->AddDomainIntegrator(
-                new NSEProjMomentumVMSInteg(
+                new NSEProjVMSIntegMomentumConvForm(
                     idata,
                     tlf,
                     femach.vel_vdim,

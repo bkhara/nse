@@ -2660,7 +2660,7 @@ namespace nse {
     //     }
     // };
 
-    class NSEProjMomentumVMSInteg : public mfem::NonlinearFormIntegrator {
+    class NSEProjVMSIntegMomentumConvForm : public mfem::NonlinearFormIntegrator {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
@@ -2680,7 +2680,7 @@ namespace nse {
         bool use_strong_laplacian_terms = false;
 
     public:
-        NSEProjMomentumVMSInteg(
+        NSEProjVMSIntegMomentumConvForm(
             const InputData& idata,
             const TimeLevelFields& tlf,
             const int vdim,
@@ -3281,7 +3281,7 @@ namespace nse {
         }
     };
 
-    class NSEProjVUERHSInteg : public mfem::LinearFormIntegrator {
+    class NSEProjVMSIntegVUERHSConvForm : public mfem::LinearFormIntegrator {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
@@ -3292,7 +3292,7 @@ namespace nse {
         bool use_strong_laplacian_terms = false;
 
     public:
-        NSEProjVUERHSInteg(
+        NSEProjVMSIntegVUERHSConvForm(
             const InputData& idata,
             const TimeLevelFields& tlf,
             const int vdim,
@@ -3437,7 +3437,7 @@ namespace nse {
         }
     };
 
-    class NSEProjPPERHSInteg : public mfem::LinearFormIntegrator {
+    class NSEProjVMSIntegPPERHSConvForm : public mfem::LinearFormIntegrator {
     private:
         const InputData& idata;
         const TimeLevelFields& tlf;
@@ -3447,7 +3447,7 @@ namespace nse {
         bool use_strong_laplacian_terms = false;
 
     public:
-        NSEProjPPERHSInteg(
+        NSEProjVMSIntegPPERHSConvForm(
             const InputData& idata,
             const TimeLevelFields& tlf,
             const int vdim,
