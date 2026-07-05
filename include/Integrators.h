@@ -58,6 +58,69 @@ namespace nse {
         return val;
     }
 
+    // -------------------------------------------------------------------
+    // Shared strong-form Laplacian helpers.
+    //
+    // MFEM's FiniteElement::CalcPhysLaplacian(T, Laplacian) evaluates the
+    // physical-space Laplacian (trace of the Hessian) of every scalar
+    // shape function of `el` at the current integration point, and is
+    // implemented for the standard H1 element families (segment/quad/hex,
+    // triangle/tet) in 1D/2D/3D -- i.e. exactly the elements this code
+    // uses (see FEMachinery.cpp, H1_FECollection). These are the single,
+    // shared implementation of the "strong viscous term" second-derivative
+    // evaluation: every integrator that needs -nu*Delta(u) should call
+    // these instead of defining its own per-class private copy.
+    // -------------------------------------------------------------------
+
+    // Delta(u) for the vector field u = sum_a elfun_a N_a(x), given the
+    // local dof vector `elfun` (size ndof*vdim, laid out per `ordering`)
+    // and the per-shape-function Laplacians `lap_N` (dof-sized, from
+    // el.CalcPhysLaplacian(T, lap_N)). Mirrors EvalVectorAtIP / EvalVectorGradAtIP.
+    inline void EvalVectorLaplacianAtIP(const mfem::Vector& elfun,
+                                        const int ndof,
+                                        const int vdim,
+                                        const mfem::Ordering::Type ordering,
+                                        const mfem::Vector& lap_N,
+                                        mfem::Vector& lap_u) {
+        lap_u.SetSize(vdim);
+        lap_u = 0.0;
+
+        for (int c = 0; c < vdim; c++) {
+            for (int a = 0; a < ndof; a++) {
+                lap_u(c) += elfun(VDofIndex(ndof, vdim, a, c, ordering)) * lap_N(a);
+            }
+        }
+    }
+
+    // Delta(u) for a vector-valued GridFunction `gf` (e.g. tlf.current.u)
+    // at the current integration point. For RHS-style integrators that
+    // know the field values but don't have an elfun of gf's own space --
+    // note `gf` may live on a different FE space than the integrator's own
+    // `el` (e.g. the PPE RHS integrates over the pressure space but needs
+    // Delta of the velocity field), so this looks up gf's own element and
+    // ordering rather than trusting the caller's.
+    inline void EvalGridFunctionVectorLaplacianAtIP(const mfem::GridFunction& gf,
+                                                    mfem::ElementTransformation& T,
+                                                    const int vdim,
+                                                    mfem::Vector& lap_u) {
+        lap_u.SetSize(vdim);
+        lap_u = 0.0;
+
+        const mfem::FiniteElement* gf_el = gf.FESpace()->GetFE(T.ElementNo);
+
+        mfem::Vector lap_N(gf_el->GetDof());
+        gf_el->CalcPhysLaplacian(T, lap_N);
+
+        mfem::Array<int> vdofs;
+        gf.FESpace()->GetElementVDofs(T.ElementNo, vdofs);
+
+        mfem::Vector gf_elfun;
+        gf.GetSubVector(vdofs, gf_elfun);
+
+        EvalVectorLaplacianAtIP(gf_elfun, gf_el->GetDof(), vdim,
+                                 gf.FESpace()->GetOrdering(), lap_N, lap_u);
+    }
+
     // Shared helper: evaluate p_hat = p0*p^n + p1*p^{n-1} and its gradient
     // at the current integration point, using the coefficients from
     // GetProjectionCoefficients(). This is "p_h*" in the projection-method
@@ -2667,17 +2730,6 @@ namespace nse {
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
-        // -------------------------------------------------------------------------
-        // Optional: old code uses strong Laplacian terms:
-        //
-        //     ns_res(i) -= nu * vcurr.laplacian(i)
-        //     diff_J    += nu * fe.d2N(b,j,j)
-        //
-        // MFEM does not provide these in the same universal way as your old FEMElm.
-        // Keep these disabled unless you implement the two helper functions below.
-        // -------------------------------------------------------------------------
-        bool use_strong_laplacian_terms = false;
-
     public:
         NSEProjVMSIntegMomentumConvForm(
             const InputData& idata,
@@ -2692,10 +2744,6 @@ namespace nse {
               f_coeff(f_coeff) {
         }
 
-        void UseStrongLaplacianTerms(const bool use_it) {
-            use_strong_laplacian_terms = use_it;
-        }
-
     private:
 
         void EvalPressureHatAndGradAtIP(mfem::ElementTransformation& T,
@@ -2708,40 +2756,6 @@ namespace nse {
             // PPE RHS integrators (conv-form and div-form alike) all
             // compute p_h* identically.
             nse::EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
-        }
-
-        void EvalVectorLaplacianAtIP(const mfem::FiniteElement& el,
-                                     mfem::ElementTransformation& T,
-                                     const mfem::IntegrationPoint& ip,
-                                     const mfem::Vector& elfun,
-                                     const int ndof,
-                                     mfem::Vector& lap_u) const {
-            lap_u.SetSize(vdim);
-            lap_u = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
-                "Implement physical second derivatives for your element family.");
-        }
-
-        void EvalShapeLaplacianAtIP(const mfem::FiniteElement& el,
-                                    mfem::ElementTransformation& T,
-                                    const mfem::IntegrationPoint& ip,
-                                    mfem::Vector& lap_N) const {
-            const int ndof = el.GetDof();
-
-            lap_N.SetSize(ndof);
-            lap_N = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalShapeLaplacianAtIP is not implemented. "
-                "Implement physical second derivatives for your element family.");
         }
 
     public:
@@ -2768,6 +2782,7 @@ namespace nse {
             mfem::Vector conv(vdim);
             mfem::Vector grad_p_hat(vdim);
             mfem::Vector lap_u(vdim);
+            mfem::Vector lap_N(ndof);
             mfem::Vector ns_res(vdim);
 
             const int e = T.ElementNo;
@@ -2785,12 +2800,13 @@ namespace nse {
 
                 el.CalcShape(ip, N);
                 el.CalcPhysDShape(T, dN);
+                el.CalcPhysLaplacian(T, lap_N);
 
                 const double wdet = ip.weight * T.Weight();
 
                 EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
                 EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
-                EvalVectorLaplacianAtIP(el, T, ip, elfun, ndof, lap_u);
+                EvalVectorLaplacianAtIP(elfun, ndof, vdim, ordering, lap_N, lap_u);
 
                 tlf.prev_1.u.GetVectorValue(T, ip, u_n);
                 tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
@@ -2961,14 +2977,13 @@ namespace nse {
 
                 el.CalcShape(ip, N);
                 el.CalcPhysDShape(T, dN);
-
-                EvalShapeLaplacianAtIP(el, T, ip, lap_N);
+                el.CalcPhysLaplacian(T, lap_N);
 
                 const double wdet = ip.weight * T.Weight();
 
                 EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
                 EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
-                EvalVectorLaplacianAtIP(el, T, ip, elfun, ndof, lap_u);
+                EvalVectorLaplacianAtIP(elfun, ndof, vdim, ordering, lap_N, lap_u);
 
                 tlf.prev_1.u.GetVectorValue(T, ip, u_n);
                 tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
@@ -3276,8 +3291,6 @@ namespace nse {
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
-        bool use_strong_laplacian_terms = false;
-
     public:
         NSEProjVMSIntegVUERHSConvForm(
             const InputData& idata,
@@ -3292,26 +3305,6 @@ namespace nse {
               f_coeff(f_coeff) {
         }
 
-        void UseStrongLaplacianTerms(const bool use_it) {
-            use_strong_laplacian_terms = use_it;
-        }
-
-    private:
-        void EvalVectorLaplacianAtIP(mfem::ElementTransformation& T,
-                                     const mfem::IntegrationPoint& ip,
-                                     mfem::Vector& lap_u) const {
-            lap_u.SetSize(vdim);
-            lap_u = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
-                "Implement/recover Laplacian(u) if exact old-code parity is needed.");
-        }
-
-    public:
         void AssembleRHSElementVect(const mfem::FiniteElement& el,
                                     mfem::ElementTransformation& T,
                                     mfem::Vector& elvec) override {
@@ -3373,7 +3366,7 @@ namespace nse {
                 double p_hat = 0.0;
                 EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
-                EvalVectorLaplacianAtIP(T, ip, lap_u);
+                EvalGridFunctionVectorLaplacianAtIP(tlf.current.u, T, vdim, lap_u);
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
@@ -3435,8 +3428,6 @@ namespace nse {
         const int vdim;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
-        bool use_strong_laplacian_terms = false;
-
     public:
         NSEProjVMSIntegPPERHSConvForm(
             const InputData& idata,
@@ -3449,26 +3440,6 @@ namespace nse {
               f_coeff(f_coeff) {
         }
 
-        void UseStrongLaplacianTerms(const bool use_it) {
-            use_strong_laplacian_terms = use_it;
-        }
-
-    private:
-        void EvalVectorLaplacianAtIP(mfem::ElementTransformation& T,
-                                     const mfem::IntegrationPoint& ip,
-                                     mfem::Vector& lap_u) const {
-            lap_u.SetSize(vdim);
-            lap_u = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
-                "Implement/recover Laplacian(u) if exact old-code parity is needed.");
-        }
-
-    public:
         void AssembleRHSElementVect(const mfem::FiniteElement& el,
                                     mfem::ElementTransformation& T,
                                     mfem::Vector& elvec) override {
@@ -3528,7 +3499,7 @@ namespace nse {
                 double p_hat = 0.0;
                 EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
-                EvalVectorLaplacianAtIP(T, ip, lap_u);
+                EvalGridFunctionVectorLaplacianAtIP(tlf.current.u, T, vdim, lap_u);
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
@@ -3652,8 +3623,6 @@ namespace nse {
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
-        bool use_strong_laplacian_terms = false;
-
     public:
         NSEProjVMSIntegMomentumDivForm(
             const InputData& idata,
@@ -3668,10 +3637,6 @@ namespace nse {
               f_coeff(f_coeff) {
         }
 
-        void UseStrongLaplacianTerms(const bool use_it) {
-            use_strong_laplacian_terms = use_it;
-        }
-
     private:
         void EvalPressureHatAndGradAtIP(mfem::ElementTransformation& T,
                                         const mfem::IntegrationPoint& ip,
@@ -3682,40 +3647,6 @@ namespace nse {
             // predictor, VUE RHS, and PPE RHS integrators all compute
             // p_h* identically.
             nse::EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
-        }
-
-        void EvalVectorLaplacianAtIP(const mfem::FiniteElement& el,
-                                     mfem::ElementTransformation& T,
-                                     const mfem::IntegrationPoint& ip,
-                                     const mfem::Vector& elfun,
-                                     const int ndof,
-                                     mfem::Vector& lap_u) const {
-            lap_u.SetSize(vdim);
-            lap_u = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
-                "Implement physical second derivatives for your element family.");
-        }
-
-        void EvalShapeLaplacianAtIP(const mfem::FiniteElement& el,
-                                    mfem::ElementTransformation& T,
-                                    const mfem::IntegrationPoint& ip,
-                                    mfem::Vector& lap_N) const {
-            const int ndof = el.GetDof();
-
-            lap_N.SetSize(ndof);
-            lap_N = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalShapeLaplacianAtIP is not implemented. "
-                "Implement physical second derivatives for your element family.");
         }
 
     public:
@@ -3742,6 +3673,7 @@ namespace nse {
             mfem::Vector conv(vdim);
             mfem::Vector grad_p_hat(vdim);
             mfem::Vector lap_u(vdim);
+            mfem::Vector lap_N(ndof);
             mfem::Vector ns_res(vdim);
 
             const int e = T.ElementNo;
@@ -3759,12 +3691,13 @@ namespace nse {
 
                 el.CalcShape(ip, N);
                 el.CalcPhysDShape(T, dN);
+                el.CalcPhysLaplacian(T, lap_N);
 
                 const double wdet = ip.weight * T.Weight();
 
                 EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
                 EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
-                EvalVectorLaplacianAtIP(el, T, ip, elfun, ndof, lap_u);
+                EvalVectorLaplacianAtIP(elfun, ndof, vdim, ordering, lap_N, lap_u);
 
                 tlf.prev_1.u.GetVectorValue(T, ip, u_n);
                 tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
@@ -3942,14 +3875,13 @@ namespace nse {
 
                 el.CalcShape(ip, N);
                 el.CalcPhysDShape(T, dN);
-
-                EvalShapeLaplacianAtIP(el, T, ip, lap_N);
+                el.CalcPhysLaplacian(T, lap_N);
 
                 const double wdet = ip.weight * T.Weight();
 
                 EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
                 EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
-                EvalVectorLaplacianAtIP(el, T, ip, elfun, ndof, lap_u);
+                EvalVectorLaplacianAtIP(elfun, ndof, vdim, ordering, lap_N, lap_u);
 
                 tlf.prev_1.u.GetVectorValue(T, ip, u_n);
                 tlf.prev_2.u.GetVectorValue(T, ip, u_nm1);
@@ -4169,8 +4101,6 @@ namespace nse {
         const mfem::Ordering::Type ordering;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
-        bool use_strong_laplacian_terms = false;
-
     public:
         NSEProjVMSIntegVUERHSDivForm(
             const InputData& idata,
@@ -4185,26 +4115,6 @@ namespace nse {
               f_coeff(f_coeff) {
         }
 
-        void UseStrongLaplacianTerms(const bool use_it) {
-            use_strong_laplacian_terms = use_it;
-        }
-
-    private:
-        void EvalVectorLaplacianAtIP(mfem::ElementTransformation& T,
-                                     const mfem::IntegrationPoint& ip,
-                                     mfem::Vector& lap_u) const {
-            lap_u.SetSize(vdim);
-            lap_u = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
-                "Implement/recover Laplacian(u) if exact old-code parity is needed.");
-        }
-
-    public:
         void AssembleRHSElementVect(const mfem::FiniteElement& el,
                                     mfem::ElementTransformation& T,
                                     mfem::Vector& elvec) override {
@@ -4266,7 +4176,7 @@ namespace nse {
                 double p_hat = 0.0;
                 EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
-                EvalVectorLaplacianAtIP(T, ip, lap_u);
+                EvalGridFunctionVectorLaplacianAtIP(tlf.current.u, T, vdim, lap_u);
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
@@ -4332,8 +4242,6 @@ namespace nse {
         const int vdim;
         mfem::VectorCoefficient* f_coeff = nullptr;
 
-        bool use_strong_laplacian_terms = false;
-
     public:
         NSEProjVMSIntegPPERHSDivForm(
             const InputData& idata,
@@ -4346,26 +4254,6 @@ namespace nse {
               f_coeff(f_coeff) {
         }
 
-        void UseStrongLaplacianTerms(const bool use_it) {
-            use_strong_laplacian_terms = use_it;
-        }
-
-    private:
-        void EvalVectorLaplacianAtIP(mfem::ElementTransformation& T,
-                                     const mfem::IntegrationPoint& ip,
-                                     mfem::Vector& lap_u) const {
-            lap_u.SetSize(vdim);
-            lap_u = 0.0;
-
-            if (!use_strong_laplacian_terms) {
-                return;
-            }
-
-            MFEM_ABORT("EvalVectorLaplacianAtIP is not implemented. "
-                "Implement/recover Laplacian(u) if exact old-code parity is needed.");
-        }
-
-    public:
         void AssembleRHSElementVect(const mfem::FiniteElement& el,
                                     mfem::ElementTransformation& T,
                                     mfem::Vector& elvec) override {
@@ -4425,7 +4313,7 @@ namespace nse {
                 double p_hat = 0.0;
                 EvalPressureHatAndGradAtIP(tlf, T, ip, pc, vdim, p_hat, grad_p_hat);
 
-                EvalVectorLaplacianAtIP(T, ip, lap_u);
+                EvalGridFunctionVectorLaplacianAtIP(tlf.current.u, T, vdim, lap_u);
 
                 u_hist.SetSize(vdim);
                 for (int c = 0; c < vdim; c++) {
