@@ -34,7 +34,7 @@ Lz = 0;
 // Negative values move the cylinder downward.
 // -----------------------------------------------------------------------------
 
-circle_y_shift = -0.1;
+circle_y_shift = 0.1;
 
 // Channel placement.
 // With CY = Ly/2 and ylo = Origin_Y - CY,

@@ -53,6 +53,11 @@ theta = Atan(leftWallFromCenter / bottomWallFromCenter);
 del_x = radius * Sin(theta);
 del_y = radius * Cos(theta);
 
+// Cylinder-only vertical shift. The outer walls stay symmetric about
+// centerY; only the circle center (and its 5 points) move up by this amount.
+circleShiftY = 0.1;
+circleCenterY = centerY + circleShiftY;
+
 //rectangle
 Point(1) = {centerX - leftWallFromCenter,  centerY - bottomWallFromCenter, 0, 1.0};
 Point(2) = {centerX + partLineFromCenter,  centerY - bottomWallFromCenter, 0, 1.0};
@@ -61,12 +66,12 @@ Point(4) = {centerX - leftWallFromCenter,  centerY + topWallFromCenter, 0, 1.0};
 Point(5) = {centerX + partLineFromCenter,  centerY + topWallFromCenter, 0, 1.0};
 Point(6) = {centerX + rightWallFromCenter, centerY + topWallFromCenter, 0, 1.0};
 
-// circle
-Point(7)  = {centerX - del_x, centerY - del_y, 0, 1.0};
-Point(8)  = {centerX + del_x, centerY - del_y, 0, 1.0};
-Point(9)  = {centerX, centerY, 0, 1.0};
-Point(10) = {centerX - del_x, centerY + del_y, 0, 1.0};
-Point(11) = {centerX + del_x, centerY + del_y, 0, 1.0};
+// circle (center shifted up by circleShiftY; walls unchanged)
+Point(7)  = {centerX - del_x, circleCenterY - del_y, 0, 1.0};
+Point(8)  = {centerX + del_x, circleCenterY - del_y, 0, 1.0};
+Point(9)  = {centerX, circleCenterY, 0, 1.0};
+Point(10) = {centerX - del_x, circleCenterY + del_y, 0, 1.0};
+Point(11) = {centerX + del_x, circleCenterY + del_y, 0, 1.0};
 
 // rectangle lines
 Line(1) = {1, 2}; Transfinite Line {1} = N_circle Using Bump R_circle; // bottom left line - horizontal
