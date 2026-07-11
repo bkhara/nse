@@ -13,8 +13,8 @@ checkpointing_inputs = {
 mesh_config = {
     use_external_mesh = true;
     # mesh_file = "fpc_uns.msh";
-    mesh_file = "fpc_str_0.msh";
-    # mesh_file = "fpc_str_1.msh";
+    # mesh_file = "fpc_str_0.msh";
+    mesh_file = "fpc_str_1.msh";
     nsd = 2;
     lengths = [1.,1.,3.]
     nels = [12,12,12]
@@ -40,8 +40,8 @@ time_marching = {
 
 method_config = {
     coupling_form      = 1; # 0: coupled, 1: uncoupled (projection)
-    convection_form    = 2; # 0: conv-form, 1: skew-sym, 2: div-form
-    div_u_flag         = 1; # div-form only: 1 keeps u*div(u) in the strong (fine-scale) residual, 0 uses convective (u.grad)u
+    convection_form    = 0; # 0: conv-form, 1: skew-sym, 2: div-form
+    div_u_flag         = 1; # For div-form only: 1 keeps u*div(u) in the strong (fine-scale) residual, 0 uses convective (u.grad)u
     disable_convection = false; # drop the convective term entirely (Stokes)
     stab_scheme        = "vms"; # none | vms | sups
 
