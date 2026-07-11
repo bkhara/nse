@@ -325,11 +325,11 @@ namespace nse {
             if (idata.mms2d_inputs.mms_type == 1) {
                 exact_velocity = new MMS2DVelocity_Type1(omega);
                 exact_pressure = new MMS2DPressure_Type1(omega);
-                forcing_rhs = new MMS2DForcing_Type1(omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
+                forcing_rhs = new MMS2DForcing_Type1(omega, idata.flow_properties.nu, idata.method_config.disable_convection);
             } else if (idata.mms2d_inputs.mms_type == 2) {
                 exact_velocity = new MMS2DVelocity_Type2(omega, 2*omega);
                 exact_pressure = new MMS2DPressure_Type2(omega, 2*omega);
-                forcing_rhs = new MMS2DForcing_Type2(omega, 2*omega, idata.flow_properties.nu, idata.flow_properties.disable_convection);
+                forcing_rhs = new MMS2DForcing_Type2(omega, 2*omega, idata.flow_properties.nu, idata.method_config.disable_convection);
             }
 
             // check parameters before proceeding

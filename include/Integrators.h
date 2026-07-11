@@ -378,7 +378,7 @@ namespace nse {
                 conv_n.SetSize(vdim);
                 conv_n = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
+                if (!idata.method_config.disable_convection) {
                     EvalConvection(u_np1, grad_u_np1, conv_np1);
                     EvalConvection(u_n, grad_u_n, conv_n);
                 }
@@ -410,7 +410,7 @@ namespace nse {
                             ((u_np1(c) - u_n(c)) / dt) * Nu(a) * wdet;
 
                         // Convective form
-                        if (!idata.flow_properties.disable_convection) {
+                        if (!idata.method_config.disable_convection) {
                             const double conv_theta =
                                 theta * conv_np1(c) + (1.0 - theta) * conv_n(c);
 
@@ -539,7 +539,7 @@ namespace nse {
                             Auu(ia, ib) += mass_ab + diff_ab;
                         }
 
-                        if (!idata.flow_properties.disable_convection) {
+                        if (!idata.method_config.disable_convection) {
                             double u_dot_grad_Nb = 0.0;
                             for (int j = 0; j < dim; j++) {
                                 u_dot_grad_Nb += u_np1(j) * dNu(b, j);
@@ -729,7 +729,7 @@ namespace nse {
                         //
                         // - sum_j u_c u_j d_j v_c
                         //
-                        if (not idata.flow_properties.disable_convection) {
+                        if (not idata.method_config.disable_convection) {
                             for (int j = 0; j < dim; j++) {
                                 (*elvec[0])(ia) +=
                                     -u_n(c) * u_n(j) * dNu(a, j) * wdet;
@@ -864,7 +864,7 @@ namespace nse {
                             Auu(ia, ib) += mass_ab + diff_ab;
                         }
 
-                        if (not idata.flow_properties.disable_convection) {
+                        if (not idata.method_config.disable_convection) {
                             // Compute u . grad(phi_a), where phi_a is the test shape.
                             //
                             // This appears in:
@@ -985,7 +985,7 @@ namespace nse {
             elvec[1]->SetSize(ndof_p);
             *elvec[1] = 0.0;
 
-            if (idata.flow_properties.disable_convection) {
+            if (idata.method_config.disable_convection) {
                 return;
             }
 
@@ -1073,7 +1073,7 @@ namespace nse {
             elmat(1, 1)->SetSize(dof_p, dof_p);
             *elmat(1, 1) = 0.0;
 
-            if (idata.flow_properties.disable_convection) {
+            if (idata.method_config.disable_convection) {
                 return;
             }
 
@@ -1227,13 +1227,13 @@ namespace nse {
 
                 conv.SetSize(vdim);
                 conv = 0.0;
-                if (!idata.flow_properties.disable_convection) {
+                if (!idata.method_config.disable_convection) {
                     EvalConvection(u, grad_u, conv);
                 }
 
                 double tauM = 0.0;
                 double tauC_unused = 0.0;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC_unused);
 
                 // Conservative strong momentum residual for SUPG:
                 //
@@ -1256,7 +1256,7 @@ namespace nse {
                     RM(c) += alpha * u(c);
                     RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
 
-                    if (!idata.flow_properties.disable_convection) {
+                    if (!idata.method_config.disable_convection) {
                         RM(c) += conv(c);
                         RM(c) += u(c) * div_u;
                     }
@@ -1366,13 +1366,13 @@ namespace nse {
 
                 conv.SetSize(vdim);
                 conv = 0.0;
-                if (!idata.flow_properties.disable_convection) {
+                if (!idata.method_config.disable_convection) {
                     EvalConvection(u, grad_u, conv);
                 }
 
                 double tauM = 0.0;
                 double tauC_unused = 0.0;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC_unused);
 
                 RM.SetSize(vdim);
                 RM = 0.0;
@@ -1381,7 +1381,7 @@ namespace nse {
                     RM(c) += alpha * u(c);
                     RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
 
-                    if (!idata.flow_properties.disable_convection) {
+                    if (!idata.method_config.disable_convection) {
                         RM(c) += conv(c);
                         RM(c) += u(c) * div_u;
                     }
@@ -1417,7 +1417,7 @@ namespace nse {
                                     dRM_du += alpha * Nu(b);
                                 }
 
-                                if (!idata.flow_properties.disable_convection) {
+                                if (!idata.method_config.disable_convection) {
                                     // d[(u . grad) u_c]
                                     dRM_du += Nu(b) * grad_u(c, k);
 
@@ -1438,7 +1438,7 @@ namespace nse {
                                     tauM * u_dot_grad_Na * dRM_du * wdet;
 
                                 // derivative of u . grad(v_c)
-                                if (!idata.flow_properties.disable_convection) {
+                                if (!idata.method_config.disable_convection) {
                                     Auu(ia, ib) +=
                                         tauM * RM(c) * Nu(b) * dNu(a, k) * wdet;
                                 }
@@ -1544,13 +1544,13 @@ namespace nse {
 
                 conv.SetSize(vdim);
                 conv = 0.0;
-                if (!idata.flow_properties.disable_convection) {
+                if (!idata.method_config.disable_convection) {
                     EvalConvection(u, grad_u, conv);
                 }
 
                 double tauM = 0.0;
                 double tauC_unused = 0.0;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC_unused);
 
                 RM.SetSize(vdim);
                 RM = 0.0;
@@ -1559,7 +1559,7 @@ namespace nse {
                     RM(c) += alpha * u(c);
                     RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
 
-                    if (!idata.flow_properties.disable_convection) {
+                    if (!idata.method_config.disable_convection) {
                         RM(c) += conv(c);
                         RM(c) += u(c) * div_u;
                     }
@@ -1662,13 +1662,13 @@ namespace nse {
 
                 conv.SetSize(vdim);
                 conv = 0.0;
-                if (!idata.flow_properties.disable_convection) {
+                if (!idata.method_config.disable_convection) {
                     EvalConvection(u, grad_u, conv);
                 }
 
                 double tauM = 0.0;
                 double tauC_unused = 0.0;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC_unused);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC_unused);
 
                 RM.SetSize(vdim);
                 RM = 0.0;
@@ -1677,7 +1677,7 @@ namespace nse {
                     RM(c) += alpha * u(c);
                     RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
 
-                    if (!idata.flow_properties.disable_convection) {
+                    if (!idata.method_config.disable_convection) {
                         RM(c) += conv(c);
                         RM(c) += u(c) * div_u;
                     }
@@ -1709,7 +1709,7 @@ namespace nse {
                                     dRM_du += alpha * Nu(b);
                                 }
 
-                                if (!idata.flow_properties.disable_convection) {
+                                if (!idata.method_config.disable_convection) {
                                     // d[(u . grad) u_c]
                                     dRM_du += Nu(b) * grad_u(c, k);
 
@@ -1874,7 +1874,7 @@ namespace nse {
                 double tauM = 0.0;
                 double tauC = 0.0;
                 // ComputeTau(u, h, dt, nu, tauM, tauC);
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
 
                 // ------------------------------------------------------------
@@ -1906,7 +1906,7 @@ namespace nse {
                     // Conservative convection:
                     //
                     // div(u tensor u)_c = (u . grad) u_c + u_c div(u)
-                    if (!idata.flow_properties.disable_convection) {
+                    if (!idata.method_config.disable_convection) {
                         RM(c) += RowDot(grad_u, c, u);
                         RM(c) += u(c) * div_u;
                     }
@@ -2042,7 +2042,7 @@ namespace nse {
                 double tauM = 0.0;
                 double tauC = 0.0;
                 // ComputeTau(u, h, dt, nu, tauM, tauC);
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 // Conservative strong momentum residual.
                 RM.SetSize(vdim);
@@ -2052,7 +2052,7 @@ namespace nse {
                     RM(c) += alpha * u(c);
                     RM(c) += -(4.0 * u_nm1(c) - u_nm2(c)) / (2.0 * dt);
 
-                    if (!idata.flow_properties.disable_convection) {
+                    if (!idata.method_config.disable_convection) {
                         RM(c) += RowDot(grad_u, c, u);
                         RM(c) += u(c) * div_u;
                     }
@@ -2123,7 +2123,7 @@ namespace nse {
                                     dRM_du += alpha * Nu(b);
                                 }
 
-                                if (!idata.flow_properties.disable_convection) {
+                                if (!idata.method_config.disable_convection) {
                                     // d[(u . grad) u_c]
                                     //
                                     // = delta u . grad u_c
@@ -2161,7 +2161,7 @@ namespace nse {
                                 //
                                 // This is the derivative of the streamline test
                                 // direction u . grad(v_c).
-                                if (!idata.flow_properties.disable_convection) {
+                                if (!idata.method_config.disable_convection) {
                                     Auu(ia, ib) +=
                                             tauM * RM(c) * Nu(b) * dNu(a, k) * wdet;
                                 }
@@ -2214,7 +2214,7 @@ namespace nse {
                                     dRM_du += alpha * Nu(b);
                                 }
 
-                                if (!idata.flow_properties.disable_convection) {
+                                if (!idata.method_config.disable_convection) {
                                     // d[(u . grad) u_c]
                                     dRM_du += Nu(b) * grad_u(c, k);
 
@@ -2352,7 +2352,7 @@ namespace nse {
     //                     elvec(ia) += pc.alpha * u(c) * N(a) * wdet;
     //
     //                     // - (u_star tensor u_star, grad v)
-    //                     if (!idata.flow_properties.disable_convection) {
+    //                     if (!idata.method_config.disable_convection) {
     //                         for (int j = 0; j < dim; j++) {
     //                             elvec(ia) += -u(c) * u(j) * dN(a, j) * wdet;
     //                         }
@@ -2430,7 +2430,7 @@ namespace nse {
     //                         elmat(ia, ib) += mass_ab + diff_ab;
     //                     }
     //
-    //                     if (!idata.flow_properties.disable_convection) {
+    //                     if (!idata.method_config.disable_convection) {
     //                         double u_dot_grad_Na = 0.0;
     //                         for (int j = 0; j < dim; j++) {
     //                             u_dot_grad_Na += u(j) * dN(a, j);
@@ -2490,7 +2490,7 @@ namespace nse {
     //         elvec.SetSize(vdim * ndof);
     //         elvec = 0.0;
     //
-    //         if (idata.flow_properties.disable_convection) {
+    //         if (idata.method_config.disable_convection) {
     //             return;
     //         }
     //
@@ -2547,7 +2547,7 @@ namespace nse {
     //         elmat.SetSize(vdim * ndof, vdim * ndof);
     //         elmat = 0.0;
     //
-    //         if (idata.flow_properties.disable_convection) {
+    //         if (idata.method_config.disable_convection) {
     //             return;
     //         }
     //
@@ -2836,7 +2836,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 // -----------------------------------------------------------------
                 // Strong residual used by the VMS fine scale:
@@ -3009,7 +3009,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
@@ -3378,7 +3378,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
@@ -3509,7 +3509,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
@@ -3719,7 +3719,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 // -----------------------------------------------------------------
                 // Coarse-scale (strong) momentum residual, divergence form:
@@ -3894,7 +3894,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
@@ -4398,7 +4398,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {
@@ -4532,7 +4532,7 @@ namespace nse {
                 }
 
                 double tauM, tauC;
-                CalcTau(T, u, nu, idata.vms_config.Ci, dt, tauM, tauC);
+                CalcTau(T, u, nu, idata.method_config.tau_options.Ci, dt, tauM, tauC);
 
                 ns_res.SetSize(vdim);
                 for (int i = 0; i < vdim; i++) {

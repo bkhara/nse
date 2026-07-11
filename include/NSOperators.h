@@ -57,7 +57,7 @@ namespace nse {
                 // form. No convective- or skew-symmetric-form BDF2 integrator
                 // exists yet, so anything else must abort rather than silently
                 // running with the wrong discrete form.
-                if (!idata.convection_info.is_divergence()) {
+                if (!idata.method_config.is_divergence_form()) {
                     MFEM_ABORT("NSEBlockOperator: BDF2 time marching is only "
                         "implemented with the divergence (conservative) "
                         "convection form (ConvectionForms::DIV_FORM). The "
@@ -75,10 +75,10 @@ namespace nse {
                 if (idata.method_config.use_stab_vms()) {
                     bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2VMSConservative(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
                 } else if (idata.method_config.use_stab_sups()) {
-                    if (idata.sups_config.use_supg) {
+                    if (idata.method_config.sups.use_supg) {
                         bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2SUPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
                     }
-                    if (idata.sups_config.use_pspg) {
+                    if (idata.method_config.sups.use_pspg) {
                         bnlf->AddDomainIntegrator(new NSEBlockIntegBDF2PSPGConservativeAddOn(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
                     }
                 }
@@ -86,7 +86,7 @@ namespace nse {
                 // NSEBlockIntegCrankNicolson is written in the direct
                 // convective form. No divergence- or skew-symmetric-form CN
                 // integrator exists yet.
-                if (!idata.convection_info.is_convective()) {
+                if (!idata.method_config.is_convective_form()) {
                     MFEM_ABORT("NSEBlockOperator: Crank-Nicolson time marching "
                         "is only implemented with the convective convection "
                         "form (ConvectionForms::CONV_FORM). The divergence and "
@@ -178,10 +178,10 @@ namespace nse {
 
             nlf = new mfem::ParNonlinearForm(femach.fespace_primal_u);
 
-            if (idata.convection_info.is_convective()) {
+            if (idata.method_config.is_convective_form()) {
                 nlf->AddDomainIntegrator(
                     new NSEProjVMSIntegMomentumConvForm(idata, tlf, femach.vel_vdim, femach.ordering, pcase->forcing_rhs));
-            } else if (idata.convection_info.is_divergence()) {
+            } else if (idata.method_config.is_divergence_form()) {
                 nlf->AddDomainIntegrator(
                     new NSEProjVMSIntegMomentumDivForm(idata, tlf, femach.vel_vdim, femach.ordering, pcase->forcing_rhs));
 

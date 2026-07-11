@@ -89,7 +89,7 @@ namespace nse {
         const MethodKey key {
             idata.method_config.coupling_form,
             idata.time_marching.marching_scheme,
-            idata.convection_info.convection_form,
+            idata.method_config.convection_form,
             idata.method_config.stab_scheme
         };
 

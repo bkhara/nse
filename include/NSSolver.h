@@ -159,9 +159,9 @@ namespace nse {
                 A_ppe.Assemble();
                 A_ppe.Finalize();
 
-                if (idata.convection_info.is_convective()) {
+                if (idata.method_config.is_convective_form()) {
                     B_ppe.AddDomainIntegrator(new NSEProjVMSIntegPPERHSConvForm(idata, tlf, fem.vel_vdim, pcase->forcing_rhs));
-                } else if (idata.convection_info.is_divergence()) {
+                } else if (idata.method_config.is_divergence_form()) {
                     B_ppe.AddDomainIntegrator(new NSEProjVMSIntegPPERHSDivForm(idata, tlf, fem.vel_vdim, pcase->forcing_rhs));
                 } else {
                     MFEM_ABORT("NSSolverUncoupled: skew-symmetric convection form is not "
@@ -181,9 +181,9 @@ namespace nse {
                 A_vue.Assemble();
                 A_vue.Finalize();
 
-                if (idata.convection_info.is_convective()) {
+                if (idata.method_config.is_convective_form()) {
                     B_vue.AddDomainIntegrator(new NSEProjVMSIntegVUERHSConvForm(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
-                } else if (idata.convection_info.is_divergence()) {
+                } else if (idata.method_config.is_divergence_form()) {
                     B_vue.AddDomainIntegrator(new NSEProjVMSIntegVUERHSDivForm(idata, tlf, fem.vel_vdim, fem.ordering, pcase->forcing_rhs));
                 } else {
                     MFEM_ABORT("NSSolverUncoupled: skew-symmetric convection form is not "

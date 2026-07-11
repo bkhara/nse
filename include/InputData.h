@@ -170,18 +170,17 @@ namespace nse {
         }
     };
 
-    struct VMSConfig {
+    // Stabilization parameter (tau) constants. Common to every stabilized
+    // method (VMS, SUPG/PSPG), so it lives under method_config as tau_options.
+    // Read by MethodConfig::ReadFromFile (no ReadFromFile of its own).
+    struct TauOptions {
         double Ci = 36.0;
     };
 
+    // Read by MethodConfig::ReadFromFile (no ReadFromFile of its own).
     struct SUPSConfig {
         bool use_supg = true;
         bool use_pspg = true;
-        void ReadFromFile(InputReader &reader) {
-            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading SUPSConfig\n"; }
-            reader.ReadValue("sups_config.use_supg", use_supg);
-            reader.ReadValue("sups_config.use_pspg", use_pspg);
-        }
     };
 
     static const char *NormToString(Norm n) {
@@ -315,37 +314,30 @@ namespace nse {
         }
     };
 
-    struct ConvectionInfo {
-        ConvectionForms convection_form = CONV_FORM;
-
-        bool is_convective() const {
-            return convection_form == CONV_FORM;
-        }
-        bool is_skew_symmetric() const {
-            return convection_form == SKEW_SYM_FORM;
-        }
-        bool is_divergence() const {
-            return convection_form == DIV_FORM;
-        }
-
-        void ReadFromFile(InputReader &reader) {
-            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading ConvectionInfo\n"; }
-            {
-                auto tmp = static_cast<int>(convection_form);
-                reader.ReadValue("convection_form", tmp);
-                convection_form = static_cast<ConvectionForms>(tmp);
-            }
-        }
-    };
     struct MethodConfig {
         CouplingFormulation coupling_form = FULLY_COUPLED;
+        ConvectionForms convection_form = CONV_FORM;
+        bool disable_convection = false;  // drop the convective term entirely (Stokes)
         std::string stab_scheme = std::string(NSStabilizationMethod::SUPG_PSPG_STABILIZED);
+
+        SUPSConfig sups;         // sub-toggles, only meaningful when stab = sups
+        TauOptions tau_options;  // stabilization-parameter constants, shared by all stab
 
         bool is_coupled() const {
             return coupling_form == FULLY_COUPLED;
         }
         bool is_uncoupled() const {
             return coupling_form == UNCOUPLED;
+        }
+
+        bool is_convective_form() const {
+            return convection_form == CONV_FORM;
+        }
+        bool is_skew_symm_form() const {
+            return convection_form == SKEW_SYM_FORM;
+        }
+        bool is_divergence_form() const {
+            return convection_form == DIV_FORM;
         }
 
         bool use_stab_none() const {
@@ -361,11 +353,22 @@ namespace nse {
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading MethodInfo\n"; }
             reader.ReadValue("method_config.stab_scheme", stab_scheme);
+            reader.ReadValue("method_config.disable_convection", disable_convection);
             {
                 auto tmp = static_cast<int>(coupling_form);
                 reader.ReadValue("method_config.coupling_form", tmp);
                 coupling_form = static_cast<CouplingFormulation>(tmp);
             }
+            {
+                auto tmp = static_cast<int>(convection_form);
+                reader.ReadValue("method_config.convection_form", tmp);
+                convection_form = static_cast<ConvectionForms>(tmp);
+            }
+            // sups and tau_options are plain data structs; read them here
+            // rather than giving each its own ReadFromFile.
+            reader.ReadValue("method_config.sups.use_supg", sups.use_supg);
+            reader.ReadValue("method_config.sups.use_pspg", sups.use_pspg);
+            reader.ReadValue("method_config.tau_options.Ci", tau_options.Ci);
         }
     };
     struct PGConfig {
@@ -666,11 +669,9 @@ namespace nse {
     struct FlowPropertiesInputs {
         double Re = 1.0;
         double nu = 1.0;
-        bool disable_convection = false;
         void ReadFromFile(InputReader &reader) {
             if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading FlowProperties\n"; }
             reader.ReadValue("Re", Re);
-            reader.ReadValue("disable_convection", disable_convection);
             nu = 1. / Re;
         }
     };
@@ -801,12 +802,8 @@ namespace nse {
         MeshConfig mesh_config;
         TimeMarchingConfig time_marching;
 
-        ConvectionInfo convection_info;
-
-        MethodConfig method_config;
+        MethodConfig method_config;   // now also holds convection_form, sups, tau_options
         ProjectionConfig projection_config;
-        VMSConfig vms_config;
-        SUPSConfig sups_config;
 
         RefinementConfig ref_config;
         StaggeredIterationConfig stag_config;
@@ -834,19 +831,21 @@ namespace nse {
             mesh_config.ReadFromFile(reader);
             time_marching.ReadFromFile(reader);
             pcase_config.ReadFromFile(reader);
-            convection_info.ReadFromFile(reader);
             flow_properties.ReadFromFile(reader);
             mms2d_inputs.ReadFromFile(reader);
             fpc2d_inputs.ReadFromFile(reader);
+            // method_config now also reads convection_form, sups, and tau_options.
             method_config.ReadFromFile(reader);
-            sups_config.ReadFromFile(reader);
 
             // Projection temporal order is not set independently: it is
             // derived from the marching scheme (bdf1 -> Chorin first-order,
-            // bdf2 -> incremental-pressure BDF2).
-            projection_config.prescribed_scheme =
-                ProjectionSchemeFromMarching(time_marching.marching_scheme);
-            projection_config.scheme = projection_config.prescribed_scheme;
+            // bdf2 -> incremental-pressure BDF2). Only relevant to the
+            // uncoupled (projection) solver.
+            if (method_config.is_uncoupled()) {
+                projection_config.prescribed_scheme =
+                    ProjectionSchemeFromMarching(time_marching.marching_scheme);
+                projection_config.scheme = projection_config.prescribed_scheme;
+            }
         }
     };
 }
