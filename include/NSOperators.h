@@ -184,6 +184,20 @@ namespace nse {
             } else if (idata.convection_info.is_divergence()) {
                 nlf->AddDomainIntegrator(
                     new NSEProjVMSIntegMomentumDivForm(idata, tlf, femach.vel_vdim, femach.ordering, pcase->forcing_rhs));
+
+                // Intended projection outflow BC: n . grad u = 0. Writing
+                // convection conservatively, -(u tensor u, grad v), otherwise
+                // imposes the spurious natural condition nu grad u.n = (u.n)u.
+                // Adding the convective flux <(u.n)u, v> on the outlet cancels
+                // that artifact and restores n . grad u = 0. (Only convective
+                // flux; the viscous flux is left as the natural h = 0 term.)
+                if (pcase->has_outlet_bc) {
+                    nlf->AddBdrFaceIntegrator(
+                        new NSEProjVMSIntegMomentumOutflowFlux(
+                            idata, tlf, femach.vel_vdim, femach.ordering,
+                            /*include_viscous_flux=*/false),
+                        pcase->outlet_marker);
+                }
             } else {
                 MFEM_ABORT("NSEProjectionVelocityPredictorOperator: "
                     "skew-symmetric convection form is not yet implemented "

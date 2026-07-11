@@ -4093,6 +4093,234 @@ namespace nse {
         }
     };
 
+    // =====================================================================
+    // Outflow (Neumann) boundary flux for the divergence-form projection
+    // momentum predictor. Intended outflow condition: n . grad u = 0.
+    //
+    // The div-form predictor assembles, as VOLUME terms only,
+    //     - (u tensor u, grad v)  +  nu (grad u, grad v)  +  (grad p*, v)
+    // (note grad p* is kept in volume form, NOT integrated by parts, so the
+    // pressure contributes no boundary term here -- unlike the coupled solver
+    // where pressure enters as -(p, div v)). Integrating the volume terms by
+    // parts back to strong form exposes the natural boundary term
+    //
+    //     nu <grad u . n, v>  -  <(u.n) u, v>   on Gamma_N.
+    //
+    // With NO face integrator, the implied natural BC would therefore be the
+    // spurious  nu grad u . n = (u.n) u  -- an artifact of writing convection
+    // conservatively. Adding back the convective flux
+    //
+    //     + <(u.n) u, v>_{Gamma_N}
+    //
+    // cancels that artifact and leaves the intended natural condition
+    //
+    //     nu grad u . n = 0   <=>   n . grad u = 0.
+    //
+    // So for n.grad u = 0 the CONVECTIVE flux alone is what is required (this
+    // is the default). Mirrors NSEBlockIntegBDF2OutletConvectiveFlux, which
+    // likewise adds only the convective flux for the coupled solver.
+    //
+    // include_viscous_flux is provided only for completeness: setting it true
+    // ALSO adds -nu <grad u . n, v>, which cancels the viscous natural term
+    // entirely and yields a *free* ("pure do-nothing") outflow with NO
+    // constraint on n.grad u -- this is NOT n.grad u = 0. Leave it false to
+    // impose the intended condition. Added as a separate boundary-face
+    // integrator restricted to the outlet marker (v = 0 on Dirichlet
+    // boundaries makes it vanish there anyway).
+    // =====================================================================
+
+    class NSEProjVMSIntegMomentumOutflowFlux : public mfem::NonlinearFormIntegrator {
+    private:
+        const InputData& idata;
+        const TimeLevelFields& tlf;
+        const int vdim;
+        const mfem::Ordering::Type ordering;
+        const bool include_viscous_flux;
+
+    public:
+        NSEProjVMSIntegMomentumOutflowFlux(
+            const InputData& idata,
+            const TimeLevelFields& tlf,
+            const int vdim,
+            const mfem::Ordering::Type ordering,
+            const bool include_viscous_flux = false)
+            : idata(idata),
+              tlf(tlf),
+              vdim(vdim),
+              ordering(ordering),
+              include_viscous_flux(include_viscous_flux) {
+        }
+
+        void AssembleFaceVector(const mfem::FiniteElement& el1,
+                                const mfem::FiniteElement& el2,
+                                mfem::FaceElementTransformations& Tr,
+                                const mfem::Vector& elfun,
+                                mfem::Vector& elvec) override {
+            // el2 is a dummy here: this integrator is attached via
+            // AddBdrFaceIntegrator(...), so MFEM restricts it to boundary
+            // faces and element 1 is the (interior) owner.
+            const int ndof = el1.GetDof();
+            const int dim = Tr.Elem1->GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elvec.SetSize(vdim * ndof);
+            elvec = 0.0;
+
+            const double nu = idata.flow_properties.nu;
+
+            mfem::Vector N(ndof);
+            mfem::DenseMatrix dN(ndof, dim);
+            mfem::Vector u(vdim);
+            mfem::DenseMatrix grad_u(vdim, dim);
+            mfem::Vector nor(dim);
+
+            const int order = 2 * el1.GetOrder();
+            const mfem::IntegrationRule* ir =
+                &mfem::IntRules.Get(Tr.GetGeometryType(), order);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip_face = ir->IntPoint(iq);
+
+                Tr.Face->SetIntPoint(&ip_face);
+
+                mfem::IntegrationPoint ip_el;
+                Tr.Loc1.Transform(ip_face, ip_el);
+                Tr.Elem1->SetIntPoint(&ip_el);
+
+                el1.CalcShape(ip_el, N);
+                EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
+
+                if (include_viscous_flux) {
+                    el1.CalcPhysDShape(*Tr.Elem1, dN);
+                    EvalVectorGradAtIP(elfun, ndof, vdim, ordering, dN, grad_u);
+                }
+
+                // nor = n |J_face|: the surface measure is already contained
+                // in nor, so only multiply by the quadrature weight.
+                mfem::CalcOrtho(Tr.Face->Jacobian(), nor);
+
+                double u_dot_n = 0.0;
+                for (int j = 0; j < dim; j++) {
+                    u_dot_n += u(j) * nor(j);
+                }
+
+                const double w = ip_face.weight;
+
+                for (int a = 0; a < ndof; a++) {
+                    for (int c = 0; c < vdim; c++) {
+                        const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                        // + < (u.n) u_c , v >
+                        if (!idata.flow_properties.disable_convection) {
+                            elvec(ia) += N(a) * u(c) * u_dot_n * w;
+                        }
+
+                        // - nu < (grad u . n)_c , v >
+                        if (include_viscous_flux) {
+                            double gradu_dot_n = 0.0;
+                            for (int j = 0; j < dim; j++) {
+                                gradu_dot_n += grad_u(c, j) * nor(j);
+                            }
+                            elvec(ia) += -nu * N(a) * gradu_dot_n * w;
+                        }
+                    }
+                }
+            }
+        }
+
+        void AssembleFaceGrad(const mfem::FiniteElement& el1,
+                              const mfem::FiniteElement& el2,
+                              mfem::FaceElementTransformations& Tr,
+                              const mfem::Vector& elfun,
+                              mfem::DenseMatrix& elmat) override {
+            const int ndof = el1.GetDof();
+            const int dim = Tr.Elem1->GetSpaceDim();
+
+            MFEM_VERIFY(vdim == dim, "Assuming vdim == dim.");
+
+            elmat.SetSize(vdim * ndof, vdim * ndof);
+            elmat = 0.0;
+
+            const double nu = idata.flow_properties.nu;
+
+            mfem::Vector N(ndof);
+            mfem::DenseMatrix dN(ndof, dim);
+            mfem::Vector u(vdim);
+            mfem::Vector nor(dim);
+
+            const int order = 2 * el1.GetOrder();
+            const mfem::IntegrationRule* ir =
+                &mfem::IntRules.Get(Tr.GetGeometryType(), order);
+
+            for (int iq = 0; iq < ir->GetNPoints(); iq++) {
+                const mfem::IntegrationPoint& ip_face = ir->IntPoint(iq);
+
+                Tr.Face->SetIntPoint(&ip_face);
+
+                mfem::IntegrationPoint ip_el;
+                Tr.Loc1.Transform(ip_face, ip_el);
+                Tr.Elem1->SetIntPoint(&ip_el);
+
+                el1.CalcShape(ip_el, N);
+                EvalVectorAtIP(elfun, ndof, vdim, ordering, N, u);
+
+                if (include_viscous_flux) {
+                    el1.CalcPhysDShape(*Tr.Elem1, dN);
+                }
+
+                mfem::CalcOrtho(Tr.Face->Jacobian(), nor);
+
+                double u_dot_n = 0.0;
+                for (int j = 0; j < dim; j++) {
+                    u_dot_n += u(j) * nor(j);
+                }
+
+                const double w = ip_face.weight;
+
+                for (int a = 0; a < ndof; a++) {
+                    for (int b = 0; b < ndof; b++) {
+                        // d/du_k of the viscous flux uses grad(N_b).n
+                        double gradNb_dot_n = 0.0;
+                        if (include_viscous_flux) {
+                            for (int j = 0; j < dim; j++) {
+                                gradNb_dot_n += dN(b, j) * nor(j);
+                            }
+                        }
+
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof, vdim, b, k, ordering);
+
+                                double val = 0.0;
+
+                                // d/du_k [ (u.n) u_c ]
+                                //   = delta_ck (u.n) + u_c n_k    (times N_b)
+                                if (!idata.flow_properties.disable_convection) {
+                                    double jac_ck = u(c) * nor(k);
+                                    if (c == k) {
+                                        jac_ck += u_dot_n;
+                                    }
+                                    val += N(a) * N(b) * jac_ck;
+                                }
+
+                                // d/du_k [ -nu (grad u . n)_c ]
+                                //   = -nu delta_ck (grad N_b . n)
+                                if (include_viscous_flux && c == k) {
+                                    val += -nu * N(a) * gradNb_dot_n;
+                                }
+
+                                elmat(ia, ib) += val * w;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     class NSEProjVMSIntegVUERHSDivForm : public mfem::LinearFormIntegrator {
     private:
         const InputData& idata;
