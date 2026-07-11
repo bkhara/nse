@@ -3666,6 +3666,7 @@ namespace nse {
             const double dt = tlf.GetTimeStep();
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
+            const int div_u_flag = idata.method_config.div_u_flag;
 
             const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
@@ -3715,7 +3716,7 @@ namespace nse {
                     for (int j = 0; j < dim; j++) {
                         conv(i) += u(j) * grad_u(i, j);
                     }
-                    conv(i) += u(i) * div_u;
+                    conv(i) += div_u_flag * u(i) * div_u;
                 }
 
                 double tauM, tauC;
@@ -3845,6 +3846,7 @@ namespace nse {
             const double dt = tlf.GetTimeStep();
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
+            const int div_u_flag = idata.method_config.div_u_flag;
 
             const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
             const double alpha = pc.beta0 / dt;
@@ -3890,7 +3892,7 @@ namespace nse {
                     for (int j = 0; j < dim; j++) {
                         conv(i) += u(j) * grad_u(i, j);
                     }
-                    conv(i) += u(i) * div_u;
+                    conv(i) += div_u_flag * u(i) * div_u;
                 }
 
                 double tauM, tauC;
@@ -3958,9 +3960,9 @@ namespace nse {
                                 val += N(b) * grad_u(c, k);
                                 if (c == k) {
                                     val += conv_b;
-                                    val += N(b) * div_u;
+                                    val += div_u_flag * N(b) * div_u;
                                 }
-                                val += u(c) * dN(b, k);
+                                val += div_u_flag * u(c) * dN(b, k);
 
                                 dResdu(c, k) = val;
                             }
@@ -4340,6 +4342,7 @@ namespace nse {
             const double dt = tlf.GetTimeStep();
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
+            const int div_u_flag = idata.method_config.div_u_flag;
 
             const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
@@ -4394,7 +4397,7 @@ namespace nse {
                     for (int j = 0; j < dim; j++) {
                         conv(i) += u(j) * grad_u(i, j);
                     }
-                    conv(i) += u(i) * div_u;
+                    conv(i) += div_u_flag * u(i) * div_u;
                 }
 
                 double tauM, tauC;
@@ -4477,6 +4480,7 @@ namespace nse {
             const double dt = tlf.GetTimeStep();
             const double ctime = tlf.GetTime();
             const double nu = idata.flow_properties.nu;
+            const int div_u_flag = idata.method_config.div_u_flag;
 
             const ProjectionCoefficients pc = GetProjectionCoefficients(idata.projection_config.scheme);
 
@@ -4528,7 +4532,7 @@ namespace nse {
                     for (int j = 0; j < dim; j++) {
                         conv(i) += u(j) * grad_u(i, j);
                     }
-                    conv(i) += u(i) * div_u;
+                    conv(i) += div_u_flag * u(i) * div_u;
                 }
 
                 double tauM, tauC;

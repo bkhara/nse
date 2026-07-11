@@ -318,6 +318,15 @@ namespace nse {
         CouplingFormulation coupling_form = FULLY_COUPLED;
         ConvectionForms convection_form = CONV_FORM;
         bool disable_convection = false;  // drop the convective term entirely (Stokes)
+
+        // Toggles the u*div(u) piece of div(u tensor u) = (u.grad)u + u*div(u)
+        // *only* in the coarse-scale (strong) residual used to drive the VMS
+        // fine scale -- i.e. inside ns_res of the divergence-form projection
+        // integrators. The Galerkin conservative term -(u tensor u, grad v) is
+        // NOT affected. div_u_flag = 1 reproduces the full divergence-form
+        // residual; div_u_flag = 0 makes the strong residual convective
+        // ((u.grad)u), matching the conv-form integrators.
+        int div_u_flag = 1;
         std::string stab_scheme = std::string(NSStabilizationMethod::SUPG_PSPG_STABILIZED);
 
         SUPSConfig sups;         // sub-toggles, only meaningful when stab = sups
@@ -364,6 +373,7 @@ namespace nse {
                 reader.ReadValue("method_config.convection_form", tmp);
                 convection_form = static_cast<ConvectionForms>(tmp);
             }
+            reader.ReadValue("method_config.div_u_flag", div_u_flag);
             // sups and tau_options are plain data structs; read them here
             // rather than giving each its own ReadFromFile.
             reader.ReadValue("method_config.sups.use_supg", sups.use_supg);
