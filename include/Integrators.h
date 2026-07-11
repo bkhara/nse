@@ -2829,11 +2829,9 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
                 }
 
@@ -2885,9 +2883,7 @@ namespace nse {
 
                         elvec(ia) += N(a) * ((pc.beta0 * u(c) + u_hist(c)) / dt) * wdet;
 
-                        if (!idata.flow_properties.disable_convection) {
-                            elvec(ia) += N(a) * conv(c) * wdet;
-                        }
+                        elvec(ia) += N(a) * conv(c) * wdet;
 
                         elvec(ia) += N(a) * grad_p_hat(c) * wdet;
 
@@ -3006,11 +3002,9 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
                 }
 
@@ -3070,38 +3064,32 @@ namespace nse {
                             elmat(ia, ib) += nu * gradNa_dot_gradNb * wdet;
                         }
 
-                        if (!idata.flow_properties.disable_convection) {
-                            for (int c = 0; c < vdim; c++) {
-                                const int ia = VDofIndex(ndof, vdim, a, c, ordering);
+                        for (int c = 0; c < vdim; c++) {
+                            const int ia = VDofIndex(ndof, vdim, a, c, ordering);
 
-                                for (int k = 0; k < vdim; k++) {
-                                    const int ib = VDofIndex(ndof, vdim, b, k, ordering);
+                            for (int k = 0; k < vdim; k++) {
+                                const int ib = VDofIndex(ndof, vdim, b, k, ordering);
 
-                                    double val = 0.0;
+                                double val = 0.0;
 
-                                    // old diagonal term:
-                                    //
-                                    //   N(a) * conv_b
-                                    //
-                                    // from (w, u . grad(delta u_c))
-                                    if (c == k) {
-                                        val += N(a) * conv_b;
-                                    }
-
-                                    // old off-diagonal term:
-                                    //
-                                    //   N(a) * grad_u(c,k) * N(b)
-                                    //
-                                    // from (w, delta u . grad u_c)
-                                    val += N(a) * grad_u(c, k) * N(b);
-
-                                    elmat(ia, ib) += val * wdet;
+                                // old diagonal term:
+                                //
+                                //   N(a) * conv_b
+                                //
+                                // from (w, u . grad(delta u_c))
+                                if (c == k) {
+                                    val += N(a) * conv_b;
                                 }
-                            }
-                        }
 
-                        if (idata.flow_properties.disable_convection) {
-                            continue;
+                                // old off-diagonal term:
+                                //
+                                //   N(a) * grad_u(c,k) * N(b)
+                                //
+                                // from (w, delta u . grad u_c)
+                                val += N(a) * grad_u(c, k) * N(b);
+
+                                elmat(ia, ib) += val * wdet;
+                            }
                         }
 
                         // ---------------------------------------------------------
@@ -3383,11 +3371,9 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
                 }
 
@@ -3516,11 +3502,9 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
                 }
 
@@ -3727,13 +3711,11 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
-                        conv(i) += u(i) * div_u;
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
+                    conv(i) += u(i) * div_u;
                 }
 
                 double tauM, tauC;
@@ -3785,10 +3767,8 @@ namespace nse {
 
                         elvec(ia) += N(a) * ((pc.beta0 * u(c) + u_hist(c)) / dt) * wdet;
 
-                        if (!idata.flow_properties.disable_convection) {
-                            for (int j = 0; j < dim; j++) {
-                                elvec(ia) += -u(c) * u(j) * dN(a, j) * wdet;
-                            }
+                        for (int j = 0; j < dim; j++) {
+                            elvec(ia) += -u(c) * u(j) * dN(a, j) * wdet;
                         }
 
                         elvec(ia) += N(a) * grad_p_hat(c) * wdet;
@@ -3906,13 +3886,11 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
-                        conv(i) += u(i) * div_u;
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
+                    conv(i) += u(i) * div_u;
                 }
 
                 double tauM, tauC;
@@ -3977,14 +3955,12 @@ namespace nse {
                                     val -= diff_J;
                                 }
 
-                                if (!idata.flow_properties.disable_convection) {
-                                    val += N(b) * grad_u(c, k);
-                                    if (c == k) {
-                                        val += conv_b;
-                                        val += N(b) * div_u;
-                                    }
-                                    val += u(c) * dN(b, k);
+                                val += N(b) * grad_u(c, k);
+                                if (c == k) {
+                                    val += conv_b;
+                                    val += N(b) * div_u;
                                 }
+                                val += u(c) * dN(b, k);
 
                                 dResdu(c, k) = val;
                             }
@@ -4007,19 +3983,13 @@ namespace nse {
                                     val += nu * gradNa_dot_gradNb;
                                 }
 
-                                if (!idata.flow_properties.disable_convection) {
-                                    if (c == k) {
-                                        val += -N(b) * crossTermVelocityPart;
-                                    }
-                                    val += -u(c) * N(b) * dN(a, k);
+                                if (c == k) {
+                                    val += -N(b) * crossTermVelocityPart;
                                 }
+                                val += -u(c) * N(b) * dN(a, k);
 
                                 elmat(ia, ib) += val * wdet;
                             }
-                        }
-
-                        if (idata.flow_properties.disable_convection) {
-                            continue;
                         }
 
                         // dResdu_dot_dNa(k) = sum_i dN(a,i) * dResdu(i,k)
@@ -4212,9 +4182,7 @@ namespace nse {
                         const int ia = VDofIndex(ndof, vdim, a, c, ordering);
 
                         // + < (u.n) u_c , v >
-                        if (!idata.flow_properties.disable_convection) {
-                            elvec(ia) += N(a) * u(c) * u_dot_n * w;
-                        }
+                        elvec(ia) += N(a) * u(c) * u_dot_n * w;
 
                         // - nu < (grad u . n)_c , v >
                         if (include_viscous_flux) {
@@ -4298,13 +4266,11 @@ namespace nse {
 
                                 // d/du_k [ (u.n) u_c ]
                                 //   = delta_ck (u.n) + u_c n_k    (times N_b)
-                                if (!idata.flow_properties.disable_convection) {
-                                    double jac_ck = u(c) * nor(k);
-                                    if (c == k) {
-                                        jac_ck += u_dot_n;
-                                    }
-                                    val += N(a) * N(b) * jac_ck;
+                                double jac_ck = u(c) * nor(k);
+                                if (c == k) {
+                                    jac_ck += u_dot_n;
                                 }
+                                val += N(a) * N(b) * jac_ck;
 
                                 // d/du_k [ -nu (grad u . n)_c ]
                                 //   = -nu delta_ck (grad N_b . n)
@@ -4424,13 +4390,11 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
-                        conv(i) += u(i) * div_u;
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
+                    conv(i) += u(i) * div_u;
                 }
 
                 double tauM, tauC;
@@ -4560,13 +4524,11 @@ namespace nse {
                 conv.SetSize(vdim);
                 conv = 0.0;
 
-                if (!idata.flow_properties.disable_convection) {
-                    for (int i = 0; i < vdim; i++) {
-                        for (int j = 0; j < dim; j++) {
-                            conv(i) += u(j) * grad_u(i, j);
-                        }
-                        conv(i) += u(i) * div_u;
+                for (int i = 0; i < vdim; i++) {
+                    for (int j = 0; j < dim; j++) {
+                        conv(i) += u(j) * grad_u(i, j);
                     }
+                    conv(i) += u(i) * div_u;
                 }
 
                 double tauM, tauC;
