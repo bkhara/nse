@@ -79,3 +79,40 @@ mkdir build; cd build
 cmake ..
 make
 ```
+
+# Available methods
+
+A "method" is a combination of four independent choices:
+
+* **coupling** — `coupled` (monolithic velocity-pressure) or `uncoupled` (projection / Chorin-Temam).
+* **marching** — `bdf1` or `bdf2` (default `bdf2`). Crank-Nicolson (`cn`) is retired: the CN
+  integrators remain in the source as dead code but are no longer selectable.
+* **convection form** — `conv` (advective), `skew` (skew-symmetric), or `div` (divergence / conservative).
+* **stabilization** — `none`, `vms` (residual-based VMS), or `sups` (SUPG + PSPG).
+
+Only a subset of the full cross-product is wired up. The table below is the single source of
+truth for what actually runs; anything not listed is rejected at startup.
+
+| Coupling   | Marching | Convection | Stabilization | Status      | Notes                                             |
+|------------|----------|------------|---------------|-------------|---------------------------------------------------|
+| coupled    | bdf2     | div        | none          | available   | div-form Galerkin, no stabilization               |
+| coupled    | bdf2     | div        | vms           | available   | residual-based VMS                                |
+| coupled    | bdf2     | div        | sups          | available   | SUPG + PSPG add-ons (see `use_supg` / `use_pspg`) |
+| uncoupled  | bdf2     | conv       | vms           | available   | incremental-pressure projection                   |
+| uncoupled  | bdf2     | div        | vms           | available   | incremental-pressure projection (+ outflow flux)  |
+| uncoupled  | bdf1     | conv       | vms           | planned     | Chorin first-order projection                     |
+| uncoupled  | bdf1     | div        | vms           | planned     | Chorin first-order projection                     |
+
+Notes:
+
+* **Coupled solver is fixed to BDF2 for now.** `NSEBlockIntegBDF2` hardcodes the BDF2 coefficients, so
+  there is no coupled BDF1 path yet.
+* **Projection temporal order follows `marching`.** `bdf1` maps to the Chorin first-order scheme and
+  `bdf2` to the incremental-pressure BDF2 scheme; `projection_config.scheme` is derived from
+  `marching` rather than set independently.
+* **Projection is always VMS-stabilized.** The projection integrators carry the residual-based
+  `tau_M` terms intrinsically, so `stab = none` / `sups` are not valid for the uncoupled path.
+* **`use_supg` / `use_pspg`** are sub-toggles within `stab = sups`. Turning both off yields an
+  unstabilized run (equivalent to `stab = none`).
+* The stabilization parameter constants (`Ci`, etc.) are common to every stabilized method and are
+  not part of the method selection.

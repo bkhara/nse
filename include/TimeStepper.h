@@ -82,10 +82,17 @@ namespace nse {
                     if (!myrank) mfem::out << "dt = " << dt << ". This will be the last step\n";
                 }
 
-                if (n == 0) {
-                    idata.projection_config.scheme = ProjectionScheme::ChorinFirstOrder;
-                } else {
-                    idata.projection_config.scheme = ProjectionScheme::IncPressureBDF2;
+                if (idata.method_config.is_uncoupled()) {
+                    if (idata.projection_config.is_bdf2() && n == 0) {
+                        // BDF2 needs u^{n-1}, which does not exist at the first
+                        // step; bootstrap with a BDF1 (Chorin) step.
+                        idata.projection_config.scheme = ProjectionScheme::ChorinFirstOrder;
+                    } else {
+                        // Otherwise run the scheme prescribed by the config
+                        // (BDF2 after bootstrap, or BDF1 throughout if that is
+                        // what was requested).
+                        idata.projection_config.scheme = idata.projection_config.prescribed_scheme;
+                    }
                 }
 
                 n += 1;

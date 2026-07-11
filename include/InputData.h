@@ -96,14 +96,24 @@ namespace nse {
         inline constexpr std::string_view WU = "wu";
     }
     namespace TimeMarchingScheme {
+        inline constexpr std::string_view BDF1 = "bdf1";
         inline constexpr std::string_view BDF2 = "bdf2";
-        inline constexpr std::string_view CN = "cn";
+        inline constexpr std::string_view CN = "cn"; // retired: dead code, not selectable
     }
 
     enum class ProjectionScheme {
         ChorinFirstOrder,
         IncPressureBDF2
     };
+
+    // Projection temporal order follows the marching scheme:
+    //   bdf1 -> Chorin first-order, bdf2 -> incremental-pressure BDF2.
+    inline ProjectionScheme ProjectionSchemeFromMarching(const std::string& marching) {
+        if (marching == TimeMarchingScheme::BDF1) {
+            return ProjectionScheme::ChorinFirstOrder;
+        }
+        return ProjectionScheme::IncPressureBDF2; // bdf2 (default)
+    }
 
     struct ProjectionCoefficients {
         double beta0 = 1.0; // dimensionless coefficient multiplying u^{n+1} or u_star
@@ -143,14 +153,20 @@ namespace nse {
     }
 
     struct ProjectionConfig {
+        ProjectionScheme prescribed_scheme = ProjectionScheme::IncPressureBDF2; // the scheme deduced from the config file
         ProjectionScheme scheme = ProjectionScheme::IncPressureBDF2;
 
-        bool IsBDF2() const {
-            return scheme == ProjectionScheme::IncPressureBDF2;
+        bool is_bdf2() const {
+            return prescribed_scheme == ProjectionScheme::IncPressureBDF2;
         }
 
-        bool IsClassicChorin() const {
+        bool is_bdf1() const {
             return scheme == ProjectionScheme::ChorinFirstOrder;
+        }
+
+        void ReadFromFile(InputReader &reader) {
+            if (!mfem::Mpi::WorldRank()) { mfem::out << "Reading ProjectionConfig\n"; }
+            // nothing for now
         }
     };
 
@@ -824,6 +840,13 @@ namespace nse {
             fpc2d_inputs.ReadFromFile(reader);
             method_config.ReadFromFile(reader);
             sups_config.ReadFromFile(reader);
+
+            // Projection temporal order is not set independently: it is
+            // derived from the marching scheme (bdf1 -> Chorin first-order,
+            // bdf2 -> incremental-pressure BDF2).
+            projection_config.prescribed_scheme =
+                ProjectionSchemeFromMarching(time_marching.marching_scheme);
+            projection_config.scheme = projection_config.prescribed_scheme;
         }
     };
 }

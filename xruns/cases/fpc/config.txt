@@ -23,7 +23,7 @@ mesh_config = {
 vel_vdim = 2
 
 fe_primal = {
-    order = 2
+    order = 1 # use order=2 for non-stabiliized cases
 }
 fe_latent = {
     space = "h1"
@@ -40,7 +40,7 @@ Re = 100.0;
 disable_convection = false;
 convection_form = 2; # 0: conv-form, 1: skew-sym, 2: div-form
 method_config = {
-    stab_scheme = "none"; # none or vms or sups
+    stab_scheme = "vms"; # none or vms or sups
     coupling_form = 1; # 0: coupled, 1: uncoupled
 }
 

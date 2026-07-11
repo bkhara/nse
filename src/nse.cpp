@@ -13,6 +13,7 @@
 
 #include "Checkpointing.h"
 #include "InputData.h"
+#include "MethodCapabilities.h"
 #include "FEMachinery.h"
 #include "TimeLevelFields.h"
 #include "ParallelTimer.h"
@@ -66,6 +67,10 @@ int main(int argc, char *argv[]) {
         {
             nse::InputData idata;
             idata.ReadFromFile(config_file, petscrc_file);
+
+            // Reject any (coupling, marching, convection, stab) combination
+            // that is not implemented, with one consistent error message.
+            nse::ValidateMethod(idata);
 
             FEMachinery fem(idata);
             TimeLevelFields tlf(fem);
