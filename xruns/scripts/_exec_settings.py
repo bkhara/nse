@@ -64,6 +64,8 @@ class SupportingFiles:
 
 	fpc = [
 		"fpc_uns.msh",
+		"fpc_str_0.msh",
+		"fpc_str_1.msh",
 		"analyse_forces.py"
 	]
 
