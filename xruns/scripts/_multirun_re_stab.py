@@ -205,12 +205,13 @@ class ReStabRuns(object):
         self.config['method_config']['stab_scheme'] = self.idata.stab_scheme
 
         # Keep this explicit so the config is internally consistent when toggling
-        # between no stabilization and SUPG/PSPG.
-        if 'sups_config' not in self.config:
-            self.config['sups_config'] = {}
+        # between no stabilization and SUPG/PSPG. sups now lives under
+        # method_config (method_config.sups.*), not a top-level sups_config.
+        if 'sups' not in self.config['method_config']:
+            self.config['method_config']['sups'] = {}
         use_sups = (self.idata.stab_scheme == "sups")
-        self.config['sups_config']['use_supg'] = use_sups
-        self.config['sups_config']['use_pspg'] = USE_PSPG
+        self.config['method_config']['sups']['use_supg'] = use_sups
+        self.config['method_config']['sups']['use_pspg'] = USE_PSPG
 
         nsteps = int(round(float(self.idata.T) / float(self.idata.dt)))
         self.config['file_write_freq'] = max(1, int(round(nsteps / FIXED_NUM_FILES_TO_WRITE)))
